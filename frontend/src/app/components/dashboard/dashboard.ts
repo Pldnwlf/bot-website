@@ -39,7 +39,7 @@ export class Dashboard implements OnInit, OnDestroy {
   private wsSubscription: Subscription | undefined;
 
   selection: SelectionModel<MinecraftAccount>;
-
+  private connectionTimeouts = new Map<string, number>();
 
   constructor(
     private accountService: MinecraftAccountService,
@@ -56,6 +56,7 @@ export class Dashboard implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.wsSubscription?.unsubscribe();
+    this.connectionTimeouts.forEach(timeout => clearTimeout(timeout));
   }
 
   loadAccounts(): void {
@@ -69,6 +70,11 @@ export class Dashboard implements OnInit, OnDestroy {
     this.wsSubscription = this.websocketService.onMessage().subscribe((msg: WebSocketMessage) => {
       const account = this.accounts.find(acc => acc.accountId === msg.payload.accountId);
       if (!account) return;
+
+      if (this.connectionTimeouts.has(account.accountId)) {
+        clearTimeout(this.connectionTimeouts.get(account.accountId));
+        this.connectionTimeouts.delete(account.accountId);
+      }
 
       if (!account.session) {
         account.session = {status: 'offline'};
@@ -115,6 +121,26 @@ export class Dashboard implements OnInit, OnDestroy {
       this.showNotification('Please enter a server address.');
       return;
     }
+
+    selectedAccounts.forEach(account => {
+      // 1. Immediately update the status for instant user feedback
+      if (!account.session) account.session = { status: 'offline' };
+      account.session.status = 'Connecting...';
+      this.isLoading[account.accountId] = true;
+
+      const timeoutId = setTimeout(() => {
+        // This code runs if no WebSocket message for this bot arrives in 10 seconds
+        if (account.session?.status === 'Connecting...') {
+          account.session.status = 'Failed (Timeout)';
+        }
+        this.isLoading[account.accountId] = false;
+        this.connectionTimeouts.delete(account.accountId); // Clean up the map
+      }, 10000);
+
+      this.connectionTimeouts.set(account.accountId, timeoutId);
+    });
+
+
     const accountIdsToStart = selectedAccounts.map((acc: any) => acc.accountId);
     this.accountService.startMultipleBots(accountIdsToStart, this.serverAddress).subscribe({
       next: (response) => {
@@ -122,20 +148,29 @@ export class Dashboard implements OnInit, OnDestroy {
         this.showNotification(successMsg);
         response.failed.forEach((failure: any) => {
           const account = this.accounts.find(acc => acc.accountId === failure.accountId);
-          if (account && account.session) {
-            account.session.status = `Failed: ${failure.reason}`;
+          if (account) {
+            if (account.session) account.session.status = `Failed: ${failure.reason}`;
             this.isLoading[failure.accountId] = false;
+            if (this.connectionTimeouts.has(failure.accountId)) {
+              clearTimeout(this.connectionTimeouts.get(failure.accountId));
+              this.connectionTimeouts.delete(failure.accountId);
+            }
           }
         });
         this.selection.clear();
       },
       error: (err: HttpErrorResponse) => {
+        // Handle a total API failure (e.g., server is down)
         accountIdsToStart.forEach(id => {
           const account = this.accounts.find(acc => acc.accountId === id);
-          if (account && account.session && account.session.status === 'Connecting...') {
-            account.session.status = 'offline';
+          if (account && account.session?.status === 'Connecting...') {
+            account.session.status = 'Failed (API Error)';
           }
           this.isLoading[id] = false;
+          if (this.connectionTimeouts.has(id)) {
+            clearTimeout(this.connectionTimeouts.get(id));
+            this.connectionTimeouts.delete(id);
+          }
         });
         this.showNotification(`Error: ${err.error.error || 'Failed to start bots.'}`, true);
       }
@@ -148,6 +183,13 @@ export class Dashboard implements OnInit, OnDestroy {
       this.showNotification('Please select at least one account to stop.');
       return;
     }
+
+    selectedAccounts.forEach(account => {
+      if (!account.session) account.session = { status: 'offline' };
+      account.session.status = 'Stopping...';
+      this.isLoading[account.accountId] = true;
+    });
+
     const accountIdsToStop = selectedAccounts.map((acc: any) => acc.accountId);
     this.accountService.stopMultipleBots(accountIdsToStop).subscribe({
       next: (response) => {
@@ -157,6 +199,11 @@ export class Dashboard implements OnInit, OnDestroy {
       },
       error: (err: HttpErrorResponse) => {
         this.showNotification(`Error: ${err.error.error || 'Failed to stop bots.'}`, true);
+        selectedAccounts.forEach(account => {
+          this.isLoading[account.accountId] = false;
+          // We don't know the previous state, so a generic error is best
+          if(account.session) account.session.status = 'Error stopping';
+        });
       }
     });
   }
