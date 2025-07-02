@@ -51,18 +51,23 @@ mat-list-item {
 }
 
 mat-list-item.selected-item:hover {
-  background-color: green; // Der dezente, graue Hover-Effekt
+  background-color: #54fd54; // Der dezente, graue Hover-Effekt
 }
-// Optional: Styling für die Snackbars in der globalen `styles.scss`
-// So kannst du Fehler rot und Erfolge grün machen.
-/* In frontend/src/styles.scss */
-/*
-.error-snackbar {
-  background-color: #f44336; // Rot
-  color: white;
+.status-connecting {
+  color: #e69138; /* Ein Gelb/Orange-Ton */
+  font-style: italic;
 }
-.success-snackbar {
-  background-color: #4caf50; // Grün
-  color: white;
+
+.status-online {
+  color: #38761d; /* Ein Grün-Ton */
+  font-weight: bold;
 }
-*/
+
+.status-offline {
+  color: rgba(0, 0, 0, 0.54); /* Standard-Textfarbe für inaktiven Text */
+}
+
+.status-error {
+  color: #cc0000; /* Ein Rot-Ton für Fehler/Kicks */
+  font-weight: bold;
+}

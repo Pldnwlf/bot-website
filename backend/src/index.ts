@@ -273,7 +273,14 @@ async function startAndManageBot(
             }
         }).catch(console.error);
 
-        broadcast({ type: 'status', payload: { accountId, status: 'Offline', reason } });
+        broadcast({
+            type: 'status',
+            payload: {
+                accountId: accountId,
+                status: 'offline',
+                reason: reason
+            }
+        });
     });
 }
 

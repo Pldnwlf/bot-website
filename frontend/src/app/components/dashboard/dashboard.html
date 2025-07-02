@@ -56,7 +56,15 @@
           </mat-checkbox>
 
           <div matListItemTitle>{{ account.ingameName || account.loginEmail }}</div>
-          <div matListItemLine>Status: {{ account.session?.status || 'offline' }}</div>
+        <div matListItemLine
+             [ngClass]="{
+       'status-connecting': account.session?.status?.includes('Connecting'),
+       'status-online': account.session?.status?.startsWith('online'),
+       'status-offline': !account.session?.status?.startsWith('online') && !account.session?.status?.includes('Connecting'),
+       'status-error': isErrorStatus(account.session?.status)
+     }">
+          Status: {{ account.session?.status || 'offline' }}
+        </div>
 
           <div matListItemMeta>
             <mat-icon [color]="account.session?.status?.startsWith('online') ? 'primary' : 'disabled'">

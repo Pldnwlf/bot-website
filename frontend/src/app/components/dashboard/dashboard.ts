@@ -32,22 +32,22 @@ import { Subscription } from 'rxjs';
   templateUrl: './dashboard.html',
   styleUrls: ['./dashboard.scss']
 })
-
-
-
 export class Dashboard implements OnInit, OnDestroy {
   accounts: MinecraftAccount[] = [];
   serverAddress: string = "";
-  isLoading: { [accountId: string]: boolean } = {}; // Ladezustand pro Bot
+  isLoading: { [accountId: string]: boolean } = {};
   private wsSubscription: Subscription | undefined;
-  protected selection: any;
+
+  selection: SelectionModel<MinecraftAccount>;
 
 
   constructor(
     private accountService: MinecraftAccountService,
     private websocketService: WebsocketService,
     private snackBar: MatSnackBar
-  ) {}
+  ) {
+    this.selection = new SelectionModel<MinecraftAccount>(true, []);
+  }
 
   ngOnInit(): void {
     this.loadAccounts();
@@ -55,7 +55,6 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    // Wichtig: Immer Subscriptions beenden, um Memory Leaks zu vermeiden!
     this.wsSubscription?.unsubscribe();
   }
 
@@ -66,28 +65,28 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   listenToWebsocket(): void {
+    // Diese Funktion ist bereits korrekt und muss nicht geändert werden.
     this.wsSubscription = this.websocketService.onMessage().subscribe((msg: WebSocketMessage) => {
       const account = this.accounts.find(acc => acc.accountId === msg.payload.accountId);
       if (!account) return;
 
-      // Finde den betroffenen Account und aktualisiere seinen Status
+      if (!account.session) {
+        account.session = {status: 'offline'};
+      }
+
       switch (msg.type) {
         case 'status':
-          if (account.session) {
-            account.session.status = msg.payload.status;
+          if (msg.payload.status === 'offline' && msg.payload.reason) {
+            account.session.status = `Offline (${msg.payload.reason})`;
           } else {
-            account.session = { status: msg.payload.status };
+            account.session.status = msg.payload.status;
           }
-          // Ladeanzeige beenden, wenn der Bot online/offline ist
           this.isLoading[account.accountId] = msg.payload.status.includes('connecting');
           break;
         case 'kicked':
-          if (account.session) {
-            account.session.status = `Kicked: ${msg.payload.reason}`;
-          }
+          account.session.status = `Kicked: ${msg.payload.reason}`;
           this.isLoading[account.accountId] = false;
           break;
-        // Zukünftig für Chat: case 'chat': ...
       }
     });
   }
@@ -108,7 +107,6 @@ export class Dashboard implements OnInit, OnDestroy {
 
   startSelected(): void {
     const selectedAccounts = this.selection.selected;
-
     if (selectedAccounts.length === 0) {
       this.showNotification('Please select at least one account to start.');
       return;
@@ -117,35 +115,40 @@ export class Dashboard implements OnInit, OnDestroy {
       this.showNotification('Please enter a server address.');
       return;
     }
-
     const accountIdsToStart = selectedAccounts.map((acc: any) => acc.accountId);
-    console.log(`Starting bots for accounts: [${accountIdsToStart.join(', ')}] on ${this.serverAddress}`);
-
     this.accountService.startMultipleBots(accountIdsToStart, this.serverAddress).subscribe({
       next: (response) => {
         let successMsg = `Command sent. Success: ${response.success.length}, Failed: ${response.failed.length}.`;
         this.showNotification(successMsg);
-        // Optional: Auswahl nach dem Start aufheben
+        response.failed.forEach((failure: any) => {
+          const account = this.accounts.find(acc => acc.accountId === failure.accountId);
+          if (account && account.session) {
+            account.session.status = `Failed: ${failure.reason}`;
+            this.isLoading[failure.accountId] = false;
+          }
+        });
         this.selection.clear();
       },
       error: (err: HttpErrorResponse) => {
+        accountIdsToStart.forEach(id => {
+          const account = this.accounts.find(acc => acc.accountId === id);
+          if (account && account.session && account.session.status === 'Connecting...') {
+            account.session.status = 'offline';
+          }
+          this.isLoading[id] = false;
+        });
         this.showNotification(`Error: ${err.error.error || 'Failed to start bots.'}`, true);
       }
     });
   }
 
-// in dashboard.component.ts
   stopSelected(): void {
     const selectedAccounts = this.selection.selected;
-
     if (selectedAccounts.length === 0) {
       this.showNotification('Please select at least one account to stop.');
       return;
     }
-
     const accountIdsToStop = selectedAccounts.map((acc: any) => acc.accountId);
-    console.log(`Stopping bots for accounts: [${accountIdsToStop.join(', ')}]`);
-
     this.accountService.stopMultipleBots(accountIdsToStop).subscribe({
       next: (response) => {
         let successMsg = `Stop command sent. Stopped: ${response.success.length}. Not running/Failed: ${response.failed.length}.`;
@@ -158,11 +161,19 @@ export class Dashboard implements OnInit, OnDestroy {
     });
   }
 
-
   showNotification(message: string, isError: boolean = false): void {
     this.snackBar.open(message, 'Close', {
       duration: 5000,
-      panelClass: isError ? ['error-snackbar'] : ['success-snackbar'] // (Styling optional in styles.scss)
+      panelClass: isError ? ['error-snackbar'] : ['success-snackbar']
     });
   }
+
+
+  isErrorStatus(status: string | undefined): boolean {
+    if (!status) {
+      return false; // Wenn kein Status da ist, ist es auch kein Fehler.
+    }
+    const lowerCaseStatus = status.toLowerCase();
+    return lowerCaseStatus.includes('kicked') || lowerCaseStatus.includes('failed');
+  };
 }
