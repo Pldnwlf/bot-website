@@ -1,0 +1,30 @@
+// Sorgt dafür, dass der Container die volle Höhe des Bildschirms einnimmt
+.sidenav-container {
+  height: 100vh;
+}
+
+// Stile für die Seitenleiste
+.sidenav {
+  width: 240px;
+  background-color: #f5f5f5;
+}
+
+// Stile für die Kopfleiste im Hauptinhalt
+.main-toolbar {
+  display: flex;
+  justify-content: space-between;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+// Stile für den Hauptinhaltsbereich
+.content {
+  padding: 24px;
+}
+
+// Stile für den aktiven Link in der Navigation
+.active-link {
+  background-color: rgba(0, 0, 0, 0.08);
+}

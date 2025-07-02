@@ -1,0 +1,72 @@
+<div class="dashboard-grid">
+
+  <!-- Linke Spalte: Steuerungs-Panel -->
+  <div class="control-panel">
+    <mat-card>
+      <mat-card-header>
+        <mat-card-title>Bot Control</mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        <p>Select accounts from the list on the right, enter a server address, and start them.</p>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Server Address</mat-label>
+          <input matInput placeholder="e.g., mc.hypixel.net" [(ngModel)]="serverAddress">
+        </mat-form-field>
+      </mat-card-content>
+      <mat-card-actions>
+        <button mat-flat-button color="primary" (click)="startSelected()" [disabled]="selection.isEmpty() || !serverAddress">
+          <mat-icon>play_arrow</mat-icon>
+          Start Selected ({{ selection.selected.length }})
+        </button>
+        <button mat-flat-button color="warn" (click)="stopSelected()" [disabled]="selection.isEmpty()">
+          <mat-icon>stop</mat-icon>
+          Stop Selected ({{ selection.selected.length }})
+        </button>
+      </mat-card-actions>
+    </mat-card>
+  </div>
+
+  <!-- Rechte Spalte: Account-Liste -->
+  <div class="account-list-panel">
+    <h2>Accounts</h2>
+    <mat-list>
+      <!-- Header-Zeile mit der "Alle auswählen"-Checkbox -->
+      <mat-list-item class="list-header">
+        <mat-checkbox
+          (change)="$event ? toggleAllRows() : null"
+          [checked]="selection.hasValue() && isAllSelected()"
+          [indeterminate]="selection.hasValue() && !isAllSelected()"
+          aria-label="Select all accounts">
+        </mat-checkbox>
+        <span class="header-label">Select All</span>
+      </mat-list-item>
+
+      <!-- Liste der einzelnen Accounts -->
+      @for (account of accounts; track account.accountId) {
+        <!-- Die ganze Zeile ist klickbar, um die Auswahl umzuschalten -->
+        <mat-list-item (click)="selection.toggle(account)" [class.selected-item]="selection.isSelected(account)">
+          <!-- Die individuelle Checkbox -->
+          <mat-checkbox
+            class="list-checkbox"
+            [checked]="selection.isSelected(account)"
+            (click)="$event.stopPropagation()"
+            (change)="$event ? selection.toggle(account) : null"
+            [aria-label]="'Select account ' + (account.ingameName || account.loginEmail)">
+          </mat-checkbox>
+
+          <div matListItemTitle>{{ account.ingameName || account.loginEmail }}</div>
+          <div matListItemLine>Status: {{ account.session?.status || 'offline' }}</div>
+
+          <div matListItemMeta>
+            <mat-icon [color]="account.session?.status?.startsWith('online') ? 'primary' : 'disabled'">
+              power
+            </mat-icon>
+          </div>
+        </mat-list-item>
+      } @empty {
+        <p class="empty-list-message">No accounts found.</p>
+      }
+    </mat-list>
+  </div>
+</div>

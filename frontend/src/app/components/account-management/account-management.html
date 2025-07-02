@@ -1,0 +1,64 @@
+<div class="management-container">
+  <h1>Account Management</h1>
+
+  <!-- Formular zum Hinzufügen neuer Accounts -->
+  <mat-card class="form-card">
+    <mat-card-header>
+      <mat-card-title>Add New Minecraft Account</mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      <form [formGroup]="addAccountForm" (ngSubmit)="onAddAccountSubmit()">
+
+        <mat-form-field appearance="outline">
+          <mat-label>Login Email</mat-label>
+          <input matInput formControlName="loginEmail" type="email" placeholder="user@example.com">
+          @if (loginEmail?.invalid && (loginEmail?.dirty || loginEmail?.touched)) {
+            <mat-error>
+              @if (loginEmail?.errors?.['required']) { Email is required. }
+              @if (loginEmail?.errors?.['email']) { Please enter a valid email address. }
+            </mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Password</mat-label>
+          <input matInput formControlName="password" type="password">
+          @if (password?.invalid && (password?.dirty || password?.touched)) {
+            <mat-error>
+              @if (password?.errors?.['required']) { Password is required. }
+              @if (password?.errors?.['minlength']) { Password must be at least 8 characters long. }
+            </mat-error>
+          }
+        </mat-form-field>
+
+        <button mat-flat-button color="primary" type="submit" [disabled]="addAccountForm.invalid || isLoading">
+          @if(isLoading) { Adding... } @else { Add Account }
+        </button>
+      </form>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- Liste der bestehenden Accounts -->
+  <h2>Your Accounts</h2>
+  @if(isLoading && accounts.length === 0) {
+    <mat-progress-bar mode="indeterminate"></mat-progress-bar>
+  }
+
+  <mat-list role="list">
+    @for(account of accounts; track account.accountId) {
+      <mat-list-item role="listitem">
+        <mat-icon matListItemIcon>person</mat-icon>
+        <div matListItemTitle>{{ account.ingameName || 'Name not available yet' }}</div>
+        <div matListItemLine>{{ account.loginEmail }}</div>
+
+        <button mat-icon-button color="warn" (click)="deleteAccount(account.accountId)" matListItemMeta>
+          <mat-icon>delete</mat-icon>
+        </button>
+      </mat-list-item>
+    } @empty {
+      @if(!isLoading) {
+        <p>No accounts found. Add one using the form above.</p>
+      }
+    }
+  </mat-list>
+</div>

@@ -1,0 +1,68 @@
+.dashboard-grid {
+  display: flex;
+  gap: 20px; // Abstand zwischen den Spalten
+}
+
+
+mat-list-item {
+  cursor: pointer;
+}
+.control-panel {
+  flex: 1; // Nimmt 1 Teil des verfügbaren Platzes
+  max-width: 400px; // Maximale Breite, damit es nicht zu sehr gestreckt wird
+}
+
+.account-list-panel {
+  flex: 2; // Nimmt 2 Teile des verfügbaren Platzes (also breiter)
+}
+
+.full-width {
+  width: 100%;
+}
+
+.list-header {
+  font-weight: bold;
+  background-color: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.header-label {
+  margin-left: 16px;
+}
+
+.list-checkbox {
+  margin-right: 16px;
+}
+
+mat-list-item {
+  cursor: pointer;
+  &:hover {
+    background-color: #f0f0f0;
+  }
+}
+
+.empty-list-message {
+  padding: 16px;
+  color: #666;
+}
+
+.selected-item {
+  background-color: palegreen; // Ein leichtes Blau zur Hervorhebung
+}
+
+mat-list-item.selected-item:hover {
+  background-color: green; // Der dezente, graue Hover-Effekt
+}
+// Optional: Styling für die Snackbars in der globalen `styles.scss`
+// So kannst du Fehler rot und Erfolge grün machen.
+/* In frontend/src/styles.scss */
+/*
+.error-snackbar {
+  background-color: #f44336; // Rot
+  color: white;
+}
+.success-snackbar {
+  background-color: #4caf50; // Grün
+  color: white;
+}
+*/
