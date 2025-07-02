@@ -1,6 +1,8 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterOutlet } from '@angular/router';
+import { KeycloakService } from 'keycloak-angular';
+import { WebsocketService } from './services/websocket';
 
 @Component({
   selector: 'app-root',
@@ -11,5 +13,13 @@ import { RouterOutlet } from '@angular/router';
   styleUrls: ['./app.scss']
 })
 export class App {
-  title = 'frontend';
+  constructor(
+    private readonly keycloak: KeycloakService,
+    private websocketService: WebsocketService // Injizieren
+  ) {
+    // Sobald die App-Komponente geladen wird, verbinden wir uns.
+    this.websocketService.connect();
+  }
+
+  // ...
 }
