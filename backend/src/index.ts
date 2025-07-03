@@ -16,6 +16,8 @@ const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3000;
 
+const logindelay = parseInt(process.env.LOGINDELAY || "1000");
+
 interface ActiveBot {
     instance: mineflayer.Bot;
     accountId: string;
@@ -82,12 +84,11 @@ app.use(keycloak.middleware());
 
 
 
-// VEREINFACHTE ZENTRALE BOT-FUNKTION: Diese Funktion startet einen Bot und verbindet ihn IMMER mit einem Server.
 async function startAndManageBot(
     accountId: string,
     loginEmail: string,
     password_decrypted: string,
-    options: { host: string; port: number }
+    options: { host: string; port: number, version?: string | false}
 ) {
     // Beende eine eventuell noch laufende Instanz sauber.
     if (activeBots.has(accountId)) {
@@ -105,7 +106,7 @@ async function startAndManageBot(
         auth: 'microsoft',
         host: options.host,
         port: options.port,
-        version: "1.21.4",
+        version: options.version ? options.version : undefined,
         hideErrors: true
     });
 
@@ -141,6 +142,7 @@ async function startAndManageBot(
                 isActive: true,
                 lastKnownServerAddress: options.host,
                 lastKnownServerPort: options.port,
+                lastKnownVersion: options.version || null,
                 lastSeenAt: new Date()
             }
         });
@@ -269,6 +271,7 @@ async function startAndManageBot(
                 isActive: false,
                 lastKnownServerAddress: null,
                 lastKnownServerPort: null,
+                lastKnownVersion: null,
                 lastSeenAt: new Date()
             }
         }).catch(console.error);
@@ -287,7 +290,7 @@ async function startAndManageBot(
 async function logAllIds() {
     const allIds = await prisma.minecraftAccount.findMany();
     for (const account of allIds) {
-        console.log(`Name: ${account.ingameName} | EMAIL: ${account.loginEmail} | ID: ${account.accountId} `);
+        console.log(`Name: ${account.ingameName} | EMAIL: ${account.loginEmail} | ID: ${account.accountId}  `);
     }
 }
 
@@ -319,7 +322,8 @@ async function reconnectActiveBotsOnStartup() {
 
             await startAndManageBot(account.accountId, account.loginEmail, password, {
                 host: account.session!.lastKnownServerAddress!,
-                port: account.session!.lastKnownServerPort!
+                port: account.session!.lastKnownServerPort!,
+                version: account.session!.lastKnownVersion || false
             });
         } catch (error) {
             console.error(`❌ Failed to reconnect bot ${account.accountId}:`, error);
@@ -331,7 +335,6 @@ async function reconnectActiveBotsOnStartup() {
     }
 }
 
-// --- Express Middleware & API Endpunkte ---
 app.use(express.json());
 
 
@@ -419,7 +422,7 @@ app.post('/api/minecraft-accounts', keycloak.protect(), async (req: any, res) =>
 });
 
 app.post('/api/bots/startmultiple', keycloak.protect(), async (req: any, res) => {
-    const { accountIds, serverAddress, serverPort } = req.body;
+    const { accountIds, serverAddress, accountVersion } = req.body;
     const keycloakUserId = req.kauth.grant.access_token.content.sub;
 
     if (!accountIds || !Array.isArray(accountIds) || accountIds.length === 0) {
@@ -450,15 +453,18 @@ app.post('/api/bots/startmultiple', keycloak.protect(), async (req: any, res) =>
             }
 
             const password = decrypt(Buffer.from(account.iv), Buffer.from(account.encryptedPassword));
+            const serverPort = 25565
 
             await startAndManageBot(accountId, account.loginEmail, password, {
                 host: serverAddress,
-                port: serverPort ? parseInt(serverPort) : 25565
+                port: serverPort || 25565,
+                version: accountVersion || false
             });
 
             results.success.push(accountId);
 
-            await new Promise(resolve => setTimeout(resolve, 8000)); // 8 Sekunden Delay
+
+            await new Promise(resolve => setTimeout(resolve, logindelay)); // 8 Sekunden Delay
 
         } catch (error: any) {
             console.error(`[${accountId}] Failed to start bot in multi-start:`, error.message);

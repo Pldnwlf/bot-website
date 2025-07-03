@@ -34,9 +34,10 @@ services:
 
       KC_DB: postgres
       KC_DB_URL_HOST: postgres-db
-      KC_DB_URL_DATABASE: minecraft_bot_dashboard
+      KC_DB_URL_DATABASE: keycloak_db
       KC_DB_USERNAME: ${DB_USER}
       KC_DB_PASSWORD: ${DB_PASSWORD}
+      KC_DB_SCHEMA: public
     ports:
       - "8080:8080"
     depends_on:
