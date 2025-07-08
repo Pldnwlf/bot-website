@@ -35,6 +35,7 @@ import { Subscription } from 'rxjs';
 export class Dashboard implements OnInit, OnDestroy {
   accounts: MinecraftAccount[] = [];
   serverAddress: string = "";
+  accountVersion: string = "";
   isLoading: { [accountId: string]: boolean } = {};
   private wsSubscription: Subscription | undefined;
 
@@ -66,33 +67,47 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   listenToWebsocket(): void {
-    // Diese Funktion ist bereits korrekt und muss nicht geändert werden.
     this.wsSubscription = this.websocketService.onMessage().subscribe((msg: WebSocketMessage) => {
       const account = this.accounts.find(acc => acc.accountId === msg.payload.accountId);
       if (!account) return;
 
-      if (this.connectionTimeouts.has(account.accountId)) {
-        clearTimeout(this.connectionTimeouts.get(account.accountId));
-        this.connectionTimeouts.delete(account.accountId);
-      }
+      let isTerminalStatus = false; // Flag to check if the connection process is over
 
       if (!account.session) {
-        account.session = {status: 'offline'};
+        account.session = { status: 'offline' };
       }
 
       switch (msg.type) {
         case 'status':
           if (msg.payload.status === 'offline' && msg.payload.reason) {
             account.session.status = `Offline (${msg.payload.reason})`;
+            isTerminalStatus = true; // 'offline' is a terminal state
           } else {
             account.session.status = msg.payload.status;
           }
+
+          // A status containing 'online' or 'failed' is also terminal
+          if (msg.payload.status.includes('online') || msg.payload.status.toLowerCase().includes('failed') || msg.payload.status.toLowerCase().includes('error')) {
+            isTerminalStatus = true;
+          }
+
+          // Update loading state, but don't mark as terminal here
           this.isLoading[account.accountId] = msg.payload.status.includes('connecting');
           break;
+
         case 'kicked':
           account.session.status = `Kicked: ${msg.payload.reason}`;
           this.isLoading[account.accountId] = false;
+          isTerminalStatus = true; // 'kicked' is a terminal state
           break;
+      }
+
+      // If we received a terminal status, the connection attempt is over.
+      // We must cancel the timeout.
+      if (isTerminalStatus && this.connectionTimeouts.has(account.accountId)) {
+        clearTimeout(this.connectionTimeouts.get(account.accountId));
+        this.connectionTimeouts.delete(account.accountId);
+        this.isLoading[account.accountId] = false; // Ensure loading is stopped
       }
     });
   }
@@ -129,20 +144,26 @@ export class Dashboard implements OnInit, OnDestroy {
       this.isLoading[account.accountId] = true;
 
       const timeoutId = setTimeout(() => {
-        // This code runs if no WebSocket message for this bot arrives in 10 seconds
-        if (account.session?.status === 'Connecting...') {
-          account.session.status = 'Failed (Timeout)';
+        // This only runs if NO terminal message was received in 10s
+        if (this.connectionTimeouts.has(account.accountId)) {
+          if (account.session?.status === 'Connecting...') {
+            account.session.status = 'Failed (Timeout)';
+          }
+          this.isLoading[account.accountId] = false;
+          this.connectionTimeouts.delete(account.accountId);
         }
-        this.isLoading[account.accountId] = false;
-        this.connectionTimeouts.delete(account.accountId); // Clean up the map
-      }, 10000);
+      }, 20 * 1000);
 
       this.connectionTimeouts.set(account.accountId, timeoutId);
     });
 
 
     const accountIdsToStart = selectedAccounts.map((acc: any) => acc.accountId);
-    this.accountService.startMultipleBots(accountIdsToStart, this.serverAddress).subscribe({
+    this.accountService.startMultipleBots(
+      accountIdsToStart,
+      this.serverAddress,
+      this.accountVersion
+    ).subscribe({
       next: (response) => {
         let successMsg = `Command sent. Success: ${response.success.length}, Failed: ${response.failed.length}.`;
         this.showNotification(successMsg);

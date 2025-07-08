@@ -89,15 +89,17 @@ async function startAndManageBot(
     loginEmail: string,
     password_decrypted: string,
     options: { host: string; port: number, version?: string | false}
-) {
+): Promise<boolean> {
     // Beende eine eventuell noch laufende Instanz sauber.
-    if (activeBots.has(accountId)) {
-        console.log(`[${accountId}] Quitting existing bot instance before starting a new one.`);
-        activeBots.get(accountId)?.instance.quit();
-        activeBots.delete(accountId);
-    }
+    try {
+        if (activeBots.has(accountId)) {
+            console.log(`[${accountId}] Quitting existing bot instance before starting a new one.`);
+            activeBots.get(accountId)?.instance.quit();
+            activeBots.delete(accountId);
+        }
 
-    console.log(`[${accountId}] Creating bot for ${options.host}:${options.port}...`);
+
+        console.log(`[${accountId}] Creating bot for ${options.host}:${options.port}...`);
 
     // Bot-Instanz erstellen. `host` und `port` werden immer übergeben.
     const bot = mineflayer.createBot({
@@ -112,9 +114,6 @@ async function startAndManageBot(
 
     activeBots.set(accountId, { instance: bot, accountId });
 
-    // --- Event-Handler (jetzt viel einfacher, ohne komplexe if-Bedingungen) ---
-
-    // 'login' wird kurz vor 'spawn' ausgelöst. Wir können hier schon den Ingame-Namen speichern.
     bot.once('login', async () => {
         console.log(`[${accountId}] Logged in as ${bot.username}. Waiting for spawn...`);
         await prisma.minecraftAccount.update({
@@ -254,38 +253,59 @@ async function startAndManageBot(
         // Der 'end'-Handler wird normalerweise nach einem Fehler ausgelöst, der das Aufräumen übernimmt.
     });
 
-    bot.once('end', (reason) => {
-        if ((bot as any).wasKicked) {
-            console.log(`[${accountId}] 'end' event ignored because bot was kicked.`);
-            return;
-        }
-
-        console.log(`[${accountId}] Bot disconnected. Reason: ${reason}`);
-
-        activeBots.delete(accountId);
-
-        prisma.botSession.update({
-            where: { accountId },
-            data: {
-                status: 'offline',
-                isActive: false,
-                lastKnownServerAddress: null,
-                lastKnownServerPort: null,
-                lastKnownVersion: null,
-                lastSeenAt: new Date()
+        bot.once('end', (reason) => {
+            if ((bot as any).wasKicked) {
+                console.log(`[${accountId}] 'end' event ignored because bot was kicked.`);
+                return;
             }
-        }).catch(console.error);
+            console.log(`[${accountId}] Bot disconnected. Reason: ${reason}`);
+
+            activeBots.delete(accountId);
+
+            prisma.botSession.update({
+                where: { accountId },
+                data: {
+                    status: 'offline',
+                    isActive: false,
+                    lastKnownServerAddress: null,
+                    lastKnownServerPort: null,
+                    lastKnownVersion: null,
+                    lastSeenAt: new Date()
+                }
+            }).catch(console.error);
+
+            broadcast({
+                type: 'status',
+                payload: {
+                    accountId: accountId,
+                    status: 'offline',
+                    reason: reason
+                }
+            });
+        });
+
+        activeBots.set(accountId, { instance: bot, accountId });
+
+        return true;
+
+    } catch (error: any) {
+        const reason = error.message || 'Unknown error during startup';
+        console.error(`[${accountId}] Failed to start bot inside startAndManageBot:`, reason);
 
         broadcast({
             type: 'status',
             payload: {
                 accountId: accountId,
-                status: 'offline',
-                reason: reason
+                status: `Failed: ${reason}`
             }
         });
-    });
+
+        return false;
+    }
 }
+
+
+
 
 async function logAllIds() {
     const allIds = await prisma.minecraftAccount.findMany();
@@ -421,17 +441,17 @@ app.post('/api/minecraft-accounts', keycloak.protect(), async (req: any, res) =>
     }
 });
 
-app.post('/api/bots/startmultiple', keycloak.protect(), async (req: any, res) => {
+// backend/src/index.ts
+
+app.post('/api/bots/startmultiple', keycloak.protect(), async (req: any, res: any) => {
     const { accountIds, serverAddress, accountVersion } = req.body;
     const keycloakUserId = req.kauth.grant.access_token.content.sub;
 
     if (!accountIds || !Array.isArray(accountIds) || accountIds.length === 0) {
-         res.status(400).json({ error: 'accountIds must be a non-empty array.' });
-        return;
+        return res.status(400).json({ error: 'accountIds must be a non-empty array.' });
     }
     if (!serverAddress) {
-         res.status(400).json({ error: 'serverAddress is required.' });
-        return;
+        return res.status(400).json({ error: 'serverAddress is required.' });
     }
 
     const results = {
@@ -439,40 +459,38 @@ app.post('/api/bots/startmultiple', keycloak.protect(), async (req: any, res) =>
         failed: [] as { accountId: string, reason: string }[]
     };
 
-    // Führe alle Starts als eine Kette von Promises aus
     for (const accountId of accountIds) {
-        try {
-            // Prüfe zuerst die Berechtigung
-            const account = await prisma.minecraftAccount.findFirst({
-                where: { accountId, keycloakUserId }
-            });
+        // Get user and decrypt password outside the try...catch for startAndManageBot
+        const account = await prisma.minecraftAccount.findFirst({
+            where: { accountId, keycloakUserId }
+        });
 
-            if (!account) {
-                results.failed.push({ accountId, reason: 'Account not found or permission denied.' });
-                continue;
-            }
-
-            const password = decrypt(Buffer.from(account.iv), Buffer.from(account.encryptedPassword));
-            const serverPort = 25565
-
-            await startAndManageBot(accountId, account.loginEmail, password, {
-                host: serverAddress,
-                port: serverPort || 25565,
-                version: accountVersion || false
-            });
-
-            results.success.push(accountId);
-
-
-            await new Promise(resolve => setTimeout(resolve, logindelay)); // 8 Sekunden Delay
-
-        } catch (error: any) {
-            console.error(`[${accountId}] Failed to start bot in multi-start:`, error.message);
-            results.failed.push({ accountId, reason: error.message || 'Unknown error' });
+        if (!account) {
+            results.failed.push({ accountId, reason: 'Account not found or permission denied.' });
+            continue; // Skip to next accountId in the loop
         }
+
+        const password = decrypt(Buffer.from(account.iv), Buffer.from(account.encryptedPassword));
+
+        // Let startAndManageBot handle the creation and its potential synchronous errors
+        const success = await startAndManageBot(accountId, account.loginEmail, password, {
+            host: serverAddress,
+            port: 25565, // Assuming a fixed port for now
+            version: accountVersion || false
+        });
+
+        if (success) {
+            results.success.push(accountId);
+        } else {
+            // The reason is already broadcasted inside startAndManageBot's catch block
+            results.failed.push({ accountId, reason: 'Startup failed, check server logs.' });
+        }
+
+        // Apply delay after each attempt, regardless of success or failure
+        await new Promise(resolve => setTimeout(resolve, logindelay));
     }
 
-    res.status(207).json({ // 207 Multi-Status ist perfekt für solche teilweisen Erfolge
+    res.status(207).json({
         message: 'Multi-start process completed.',
         ...results
     });
@@ -522,6 +540,46 @@ app.post('/api/bots/stopmultiple', keycloak.protect(), async (req: any, res) => 
         message: 'Multi-stop process completed.',
         ...results
     });
+});
+
+
+app.delete('/api/minecraft-accounts/:accountId', keycloak.protect(), async (req: any, res: any) => {
+    const { accountId } = req.params;
+    const keycloakUserId = req.kauth.grant.access_token.content.sub;
+
+    try {
+        const account = await prisma.minecraftAccount.findFirstOrThrow({
+            where: { accountId, keycloakUserId }
+        });
+
+        const activeBot = activeBots.get(accountId);
+        if (activeBot) {
+            console.log(`[${accountId}] Stopping bot before deletion...`);
+            activeBot.instance.quit();
+            await new Promise(resolve => setTimeout(resolve, 250));
+        }
+
+        await prisma.$transaction(async (tx) => {
+            await tx.botSession.deleteMany({
+                where: { accountId: account.accountId }
+            });
+            await tx.minecraftAccount.delete({
+                where: { accountId: account.accountId }
+            });
+        });
+
+        console.log(`[${accountId}] Account and session deleted successfully.`);
+        // A 204 No Content response is standard for a successful DELETE operation with no body to return.
+        res.status(204).send();
+
+    } catch (error: any) {
+        // Prisma's findFirstOrThrow will throw an error if the record is not found.
+        if (error.code === 'P2025') {
+            return res.status(404).json({ error: 'Account not found or you do not have permission.' });
+        }
+        console.error(`[${accountId}] Failed to delete account:`, error);
+        res.status(500).json({ error: 'Internal server error.' });
+    }
 });
 
 

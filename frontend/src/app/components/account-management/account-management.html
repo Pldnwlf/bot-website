@@ -51,7 +51,7 @@
         <div matListItemTitle>{{ account.ingameName || 'Name not available yet' }}</div>
         <div matListItemLine>{{ account.loginEmail }}</div>
 
-        <button mat-icon-button color="warn" (click)="deleteAccount(account.accountId)" matListItemMeta>
+        <button mat-icon-button color="warn" (click)="deleteAccount(account.accountId, account.ingameName )" matListItemMeta>
           <mat-icon>delete</mat-icon>
         </button>
       </mat-list-item>

@@ -35,8 +35,12 @@ export class MinecraftAccountService {
     return this.http.delete(`${this.apiUrl}/minecraft-accounts/${id}`);
   }
 
-  startMultipleBots(accountIds: string[], serverAddress: string, serverPort?: number): Observable<any> {
-    const body = { accountIds, serverAddress, serverPort };
+  startMultipleBots(accountIds: string[], serverAddress: string,  accountVersion?: string): Observable<any> {
+    const body = {
+      accountIds,
+      serverAddress,
+      ...(accountVersion && { accountVersion })
+    };
     return this.http.post(`${this.apiUrl}/bots/startmultiple`, body);
   }
 

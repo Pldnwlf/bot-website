@@ -92,25 +92,32 @@ export class AccountManagement implements OnInit {
   }
 
 
-  deleteAccount(id: string): void {
-    if (!confirm('Are you sure you want to delete this account?')) {
+  deleteAccount(accountId: string, accountName: string | undefined): void {
+    const confirmation = confirm(`Are you sure you want to permanently delete the account "${accountName || 'this account'}"? This action cannot be undone.`);
+
+    if (!confirmation) {
       return;
     }
+
     this.isLoading = true;
 
-    this.accountService.removeAccount(id).subscribe({
+    this.accountService.removeAccount(accountId).subscribe({
       next: () => {
-        // Die UI aktualisieren, indem der gelöschte Account aus der Liste gefiltert wird
-        this.accounts = this.accounts.filter(acc => acc.accountId !== id);
-
-        this.snackBar.open('Account deleted successfully!', 'OK', { duration: 3000 });
+        this.accounts = this.accounts.filter(acc => acc.accountId !== accountId);
+        this.showNotification('Account deleted successfully.');
         this.isLoading = false;
       },
-      // Diese Funktion wird ausgeführt, wenn die API einen Fehler zurückgibt
-      error: (err) => {
-        this.showError(err.error?.error || 'Failed to delete account.');
+      error: (err: HttpErrorResponse) => {
+        this.showNotification(`Error: ${err.error.error || 'Failed to delete account.'}`, true);
         this.isLoading = false;
       }
+    });
+  }
+  // Deine bestehende showNotification Methode
+  showNotification(message: string, isError: boolean = false): void {
+    this.snackBar.open(message, 'Close', {
+      duration: 5000,
+      panelClass: isError ? ['error-snackbar'] : ['success-snackbar']
     });
   }
 
