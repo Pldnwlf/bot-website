@@ -10,6 +10,7 @@ import * as mineflayer from 'mineflayer';
 import { WebSocketServer } from 'ws';
 import http from 'http';
 import * as util from "node:util";
+import { Bot } from "mineflayer";
 
 //  Globale Konstanten und Variablen
 const app = express();
@@ -84,24 +85,14 @@ app.use(keycloak.middleware());
 
 
 
-async function startAndManageBot(
+function createBotInstance(
     accountId: string,
     loginEmail: string,
     password_decrypted: string,
-    options: { host: string; port: number, version?: string | false}
-): Promise<boolean> {
-    // Beende eine eventuell noch laufende Instanz sauber.
-    try {
-        if (activeBots.has(accountId)) {
-            console.log(`[${accountId}] Quitting existing bot instance before starting a new one.`);
-            activeBots.get(accountId)?.instance.quit();
-            activeBots.delete(accountId);
-        }
+    options: { host: string; port: number, version?: string | false }
+): mineflayer.Bot {
+    console.log(`[${accountId}] Creating bot for ${options.host}:${options.port}...`);
 
-
-        console.log(`[${accountId}] Creating bot for ${options.host}:${options.port}...`);
-
-    // Bot-Instanz erstellen. `host` und `port` werden immer übergeben.
     const bot = mineflayer.createBot({
         username: loginEmail,
         password: password_decrypted,
@@ -111,23 +102,18 @@ async function startAndManageBot(
         version: options.version ? options.version : undefined,
         hideErrors: true
     });
-
-    activeBots.set(accountId, { instance: bot, accountId });
-
     bot.once('login', async () => {
         console.log(`[${accountId}] Logged in as ${bot.username}. Waiting for spawn...`);
         await prisma.minecraftAccount.update({
-            where: { accountId },
-            data: { ingameName: bot.username }
+            where: {accountId},
+            data: {ingameName: bot.username}
         });
-        // WICHTIG: Status auf 'connecting' setzen, da der Bot noch nicht im Spiel ist.
         await prisma.botSession.update({
-            where: { accountId },
-            data: { status: 'connecting', isActive: true, lastSeenAt: new Date() }
+            where: {accountId},
+            data: {status: 'connecting', isActive: true, lastSeenAt: new Date()}
         });
     });
 
-    // 'spawn' bedeutet, der Bot ist erfolgreich im Spiel.
     bot.once('spawn', async () => {
         console.log(`[${accountId}] Spawned successfully on ${options.host}.`);
 
@@ -135,7 +121,7 @@ async function startAndManageBot(
         console.log(`[${accountId}] Performing post-spawn action to appear 'alive'.`);
         bot.chat("mhm");
         await prisma.botSession.update({
-            where: { accountId },
+            where: {accountId},
             data: {
                 status: 'online_on_server',
                 isActive: true,
@@ -145,17 +131,13 @@ async function startAndManageBot(
                 lastSeenAt: new Date()
             }
         });
-        broadcast({ type: 'status', payload: { accountId, status: `Online on ${options.host}` } });
+        broadcast({type: 'status', payload: {accountId, status: `Online on ${options.host}`}});
     });
 
     bot.on('kicked', async (reason, loggedIn) => {
-        // Markiere, dass der Bot gekickt wurde, um den 'end'-Handler zu überspringen.
         (bot as any).wasKicked = true;
 
-        // Die `getMessageFromComponent`-Funktion von vorher ist immer noch nützlich,
-        // aber wir stellen sicher, dass sie robust ist.
         const getMessageFromComponent = (component: any): string => {
-            // WICHTIGE SICHERHEITSPRÜFUNG: Wenn die Komponente null/undefined ist, gib einen leeren String zurück.
             if (!component) return '';
             if (typeof component === 'string') return component;
 
@@ -163,8 +145,6 @@ async function startAndManageBot(
             if (component.extra && Array.isArray(component.extra)) {
                 message += component.extra.map(getMessageFromComponent).join('');
             }
-            // Wir können die 'translate'-Logik für eine einfachere, robustere Version vorerst entfernen
-            // oder sie mit mehr Sicherheitsprüfungen versehen.
             if (component.translate) {
                 message += ` (Translate: ${component.translate})`; // Sicherere Ausgabe
             }
@@ -172,25 +152,22 @@ async function startAndManageBot(
             return message;
         };
 
-        // Rufe die Funktion mit dem `reason`-Objekt direkt auf.
-        // Wenn es keinen Grund gibt, verwende einen Standardtext.
         const kickMessage = getMessageFromComponent(reason) || 'Connection lost or kicked by server.';
 
         console.log(`[${accountId}] Bot was kicked. Parsed Reason: "${kickMessage}"`);
 
         // Datenbank-Update
         await prisma.botSession.update({
-            where: { accountId },
+            where: {accountId},
             data: {
                 status: 'kicked',
                 isActive: false,
-                lastKickReason: kickMessage, // Speichere die saubere Nachricht
+                lastKickReason: kickMessage,
                 lastKnownServerAddress: null,
                 lastKnownServerPort: null,
             }
         });
 
-        // Broadcast an das Frontend
         broadcast({
             type: 'kicked',
             payload: {
@@ -200,41 +177,33 @@ async function startAndManageBot(
         });
     });
 
-    // ERSETZE DEN ALTEN 'message'-HANDLER HIERMIT:
     bot.on('message', (jsonMsg) => {
-        // 1. Parse das komplexe JSON-Objekt in einen einfachen String
         const plainMessage = parseChatComponent(jsonMsg).trim();
 
-        // 2. Ignoriere leere oder irrelevante Nachrichten (z.B. reine Formatierungs-Updates)
         if (plainMessage.length === 0) {
             return;
         }
 
-        // OPTIONAL, ABER EMPFOHLEN: Versuche, die Nachricht zu strukturieren
-        // Dieses Regex versucht, [Rank] Username: Message zu erkennen
         const chatRegex = /(?:\[([^\]]+)\]\s*)?(\w+):\s*(.*)/;
         const match = plainMessage.match(chatRegex);
 
         let chatData;
 
         if (match) {
-            // Die Nachricht passt zu unserem erwarteten Chat-Format
             const [_, rank, username, message] = match;
             chatData = {
                 type: 'structured_chat',
                 username: username,
-                rank: rank || null, // Rank ist optional
+                rank: rank || null,
                 message: message
             };
         } else {
-            // Die Nachricht hat ein unbekanntes Format, wir senden sie als "Systemnachricht"
             chatData = {
                 type: 'system_message',
                 message: plainMessage
             };
         }
 
-        // 3. Sende die SAUBEREN und STRUKTURIERTEN Daten an das Frontend
         broadcast({
             type: 'chat_message', // Ein klarer Typ für das Frontend
             payload: {
@@ -249,59 +218,42 @@ async function startAndManageBot(
 
     bot.on('error', (err) => {
         console.error(`[${accountId}] Bot Error:`, err);
-        broadcast({ type: 'status', payload: { accountId, status: `Error: ${err.message}` } });
+        broadcast({type: 'status', payload: {accountId, status: `Error: ${err.message}`}});
         // Der 'end'-Handler wird normalerweise nach einem Fehler ausgelöst, der das Aufräumen übernimmt.
     });
 
-        bot.once('end', (reason) => {
-            if ((bot as any).wasKicked) {
-                console.log(`[${accountId}] 'end' event ignored because bot was kicked.`);
-                return;
+    bot.once('end', (reason) => {
+        if ((bot as any).wasKicked) {
+            console.log(`[${accountId}] 'end' event ignored because bot was kicked.`);
+            return;
+        }
+        console.log(`[${accountId}] Bot disconnected. Reason: ${reason}`);
+
+        activeBots.delete(accountId);
+
+        prisma.botSession.update({
+            where: {accountId},
+            data: {
+                status: 'offline',
+                isActive: false,
+                lastKnownServerAddress: null,
+                lastKnownServerPort: null,
+                lastKnownVersion: null,
+                lastSeenAt: new Date()
             }
-            console.log(`[${accountId}] Bot disconnected. Reason: ${reason}`);
-
-            activeBots.delete(accountId);
-
-            prisma.botSession.update({
-                where: { accountId },
-                data: {
-                    status: 'offline',
-                    isActive: false,
-                    lastKnownServerAddress: null,
-                    lastKnownServerPort: null,
-                    lastKnownVersion: null,
-                    lastSeenAt: new Date()
-                }
-            }).catch(console.error);
-
-            broadcast({
-                type: 'status',
-                payload: {
-                    accountId: accountId,
-                    status: 'offline',
-                    reason: reason
-                }
-            });
-        });
-
-        activeBots.set(accountId, { instance: bot, accountId });
-
-        return true;
-
-    } catch (error: any) {
-        const reason = error.message || 'Unknown error during startup';
-        console.error(`[${accountId}] Failed to start bot inside startAndManageBot:`, reason);
+        }).catch(console.error);
 
         broadcast({
             type: 'status',
             payload: {
                 accountId: accountId,
-                status: `Failed: ${reason}`
+                status: 'offline',
+                reason: reason
             }
         });
+    });
 
-        return false;
-    }
+    return bot;
 }
 
 
@@ -321,7 +273,7 @@ async function getAllMinecraftAccounts(){
 }
 
 
-// Diese Funktion ist jetzt perfekt auf das neue, einfache Modell abgestimmt.
+/// Replace your existing reconnectActiveBotsOnStartup function.
 async function reconnectActiveBotsOnStartup() {
     console.log('🔄 Checking for bots to reconnect...');
     const accountsToReconnect = await prisma.minecraftAccount.findMany({
@@ -340,11 +292,15 @@ async function reconnectActiveBotsOnStartup() {
             console.log(`Attempting to reconnect bot ${account.accountId} to ${account.session!.lastKnownServerAddress}...`);
             const password = decrypt(Buffer.from(account.iv), Buffer.from(account.encryptedPassword));
 
-            await startAndManageBot(account.accountId, account.loginEmail, password, {
+            const botInstance = createBotInstance(account.accountId, account.loginEmail, password, {
                 host: account.session!.lastKnownServerAddress!,
                 port: account.session!.lastKnownServerPort!,
                 version: account.session!.lastKnownVersion || false
             });
+
+            // Add the successfully re-created bot to the active map.
+            activeBots.set(account.accountId, { instance: botInstance, accountId: account.accountId });
+
         } catch (error) {
             console.error(`❌ Failed to reconnect bot ${account.accountId}:`, error);
             await prisma.botSession.update({
@@ -354,7 +310,6 @@ async function reconnectActiveBotsOnStartup() {
         }
     }
 }
-
 app.use(express.json());
 
 
@@ -460,33 +415,43 @@ app.post('/api/bots/startmultiple', keycloak.protect(), async (req: any, res: an
     };
 
     for (const accountId of accountIds) {
-        // Get user and decrypt password outside the try...catch for startAndManageBot
-        const account = await prisma.minecraftAccount.findFirst({
-            where: { accountId, keycloakUserId }
-        });
+        try {
+            const account = await prisma.minecraftAccount.findFirstOrThrow({
+                where: { accountId, keycloakUserId }
+            });
 
-        if (!account) {
-            results.failed.push({ accountId, reason: 'Account not found or permission denied.' });
-            continue; // Skip to next accountId in the loop
-        }
+            // 1. Check for and quit an existing bot BEFORE creating a new one.
+            if (activeBots.has(accountId)) {
+                console.log(`[${accountId}] Quitting existing bot instance before starting a new one.`);
+                const existingBot = activeBots.get(accountId);
+                existingBot?.instance.quit(); // We can safely quit here.
+                activeBots.delete(accountId);
+            }
 
-        const password = decrypt(Buffer.from(account.iv), Buffer.from(account.encryptedPassword));
+            // 2. Create the new bot instance. This might throw an error.
+            const password = decrypt(Buffer.from(account.iv), Buffer.from(account.encryptedPassword));
+            const newBotInstance = createBotInstance(accountId, account.loginEmail, password, {
+                host: serverAddress,
+                port: 25565,
+                version: accountVersion || false
+            });
 
-        // Let startAndManageBot handle the creation and its potential synchronous errors
-        const success = await startAndManageBot(accountId, account.loginEmail, password, {
-            host: serverAddress,
-            port: 25565, // Assuming a fixed port for now
-            version: accountVersion || false
-        });
-
-        if (success) {
+            activeBots.set(accountId, { instance: newBotInstance, accountId });
             results.success.push(accountId);
-        } else {
-            // The reason is already broadcasted inside startAndManageBot's catch block
-            results.failed.push({ accountId, reason: 'Startup failed, check server logs.' });
+
+        } catch (error: any) {
+            // This will catch any error from createBotInstance, including "Invalid credentials".
+            const reason = error.message || 'Unknown error during startup';
+            console.error(`[${accountId}] Failed to start bot in multi-start:`, reason);
+            results.failed.push({ accountId, reason: reason });
+            // Broadcast the failure so the frontend knows immediately.
+            broadcast({
+                type: 'status',
+                payload: { accountId, status: `Failed: ${reason}` }
+            });
         }
 
-        // Apply delay after each attempt, regardless of success or failure
+        // Apply delay after each attempt.
         await new Promise(resolve => setTimeout(resolve, logindelay));
     }
 
