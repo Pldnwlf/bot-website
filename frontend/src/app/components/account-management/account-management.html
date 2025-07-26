@@ -38,6 +38,37 @@
     </mat-card-content>
   </mat-card>
 
+  <!-- Karte für den Bulk Import -->
+  <mat-card class="form-card">
+    <mat-card-header>
+      <mat-card-title>Bulk Import Accounts</mat-card-title>
+      <mat-card-subtitle>Upload a JSON file with account credentials.</mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      <p>
+        The JSON file must be an array of objects, each with a "loginEmail" and "password" property. Example:
+      </p>
+
+      <div class="file-input-container">
+        <button type="button" mat-stroked-button (click)="fileInput.click()">
+          <mat-icon>attach_file</mat-icon>
+          Choose File
+        </button>
+        <input hidden #fileInput type="file" (change)="onFileSelected($event)" accept=".json">
+
+        @if(selectedFile) {
+          <span class="file-name">{{ selectedFile.name }}</span>
+        }
+      </div>
+
+    </mat-card-content>
+    <mat-card-actions>
+      <button mat-flat-button color="primary" (click)="onBulkImportSubmit()" [disabled]="!selectedFile || isUploading">
+        @if(isUploading) { Uploading... } @else { Upload and Import }
+      </button>
+    </mat-card-actions>
+  </mat-card>
+
   <!-- Liste der bestehenden Accounts -->
   <h2>Your Accounts</h2>
   @if(isLoading && accounts.length === 0) {
@@ -51,7 +82,10 @@
         <div matListItemTitle>{{ account.ingameName || 'Name not available yet' }}</div>
         <div matListItemLine>{{ account.loginEmail }}</div>
 
-        <button mat-icon-button color="warn" (click)="deleteAccount(account.accountId, account.ingameName )" matListItemMeta>
+        <button mat-icon-button color="warn"
+                (click)="deleteAccount(account.accountId, account.ingameName || account.loginEmail); $event.stopPropagation()"
+                matListItemMeta
+                aria-label="Delete this account">
           <mat-icon>delete</mat-icon>
         </button>
       </mat-list-item>

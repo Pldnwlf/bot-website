@@ -36,6 +36,8 @@ export class AccountManagement implements OnInit {
   accounts: MinecraftAccount[] = [];
   addAccountForm: FormGroup;
   isLoading = false; // Für Ladeanzeigen
+  selectedFile: File | null = null;
+  isUploading = false;
 
   constructor(
     private fb: FormBuilder,
@@ -128,6 +130,45 @@ export class AccountManagement implements OnInit {
     this.snackBar.open(message, 'Close', {
       duration: 3000,
       panelClass: ['error-snackbar']
+    });
+  }
+  onFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    if (input.files && input.files.length > 0) {
+      this.selectedFile = input.files[0];
+    } else {
+      this.selectedFile = null;
+    }
+  }
+  onBulkImportSubmit(): void {
+    if (!this.selectedFile) {
+      this.showNotification('Please select a file to upload.', true);
+      return;
+    }
+
+    this.isUploading = true;
+    this.accountService.bulkImportAccounts(this.selectedFile).subscribe({
+      next: (response) => {
+        const message = `Import complete: ${response.success} added, ${response.failed} failed.`;
+        this.showNotification(message);
+
+        // Optionally, show detailed errors
+        if (response.errors && response.errors.length > 0) {
+          const errorDetails = response.errors.map((e: any) => `${e.email}: ${e.reason}`).join('\n');
+          // Using console.error is a good way to show detailed info without cluttering the UI.
+          console.error('Bulk import errors:\n', errorDetails);
+          alert('Some accounts failed to import. Check the browser console (F12) for details.');
+        }
+
+        // Refresh the account list to show the new accounts
+        this.loadAccounts();
+        this.selectedFile = null; // Clear the selection
+        this.isUploading = false;
+      },
+      error: (err: HttpErrorResponse) => {
+        this.showNotification(err.error?.error || 'Failed to upload file.', true);
+        this.isUploading = false;
+      }
     });
   }
 }

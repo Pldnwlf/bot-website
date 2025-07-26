@@ -1,0 +1,46 @@
+Keycloak-Konfiguration: Kompakte Checkliste
+Ziel: Dein Angular-Frontend (http://localhost:4200) soll einen Benutzer über Keycloak (http://localhost:8080) authentifizieren können.
+1. Admin-Konsole aufrufen
+URL: http://localhost:8080
+Aktion: Auf "Administration Console" klicken.
+Login: admin / admin
+2. Realm erstellen
+Ein Realm ist der isolierte Bereich für deine Anwendung.
+Ort: Oben links über "master" hovern -> Create Realm
+Einstellungen:
+Realm name: minecraft-dashboard
+Aktion: Auf Create klicken.
+Du befindest dich jetzt automatisch im neuen minecraft-dashboard-Realm.
+3. Client erstellen
+Der "Client" ist deine Angular-Anwendung.
+Ort: Menü links: Clients -> Create client
+Schritt 1: General Settings
+Client ID: angular-frontend
+(Muss exakt so heißen, da es im Code so konfiguriert ist)
+Aktion: Auf Next klicken.
+Schritt 2: Capability config
+Client authentication: OFF
+(WICHTIG! Das macht es zu einem "public client" für Browser-Anwendungen)
+Standard flow: ON
+Aktion: Auf Next klicken.
+Schritt 3: Login settings
+Valid redirect URIs: http://localhost:4200/*
+(WICHTIG! Das Sternchen am Ende ist wichtig. Dies ist die häufigste Fehlerquelle.)
+Web origins: http://localhost:4200
+(Auf das +-Symbol klicken, um den Wert hinzuzufügen)
+Aktion: Auf Save klicken.
+4. Test-Benutzer erstellen
+Ein Benutzerkonto zum Einloggen in deine App.
+Ort: Menü links: Users -> Add user
+Einstellungen:
+Username: testuser (oder ein beliebiger Name)
+Aktion: Auf Create klicken.
+Passwort setzen:
+Ort: Auf der Detailseite des neuen Benutzers zum Tab Credentials wechseln.
+Aktion: Auf den Button Set password klicken.
+Einstellungen im Dialog:
+Password: Ein Passwort deiner Wahl (z.B. password)
+Password confirmation: Dasselbe Passwort erneut eingeben.
+Temporary: OFF
+(WICHTIG! Sonst muss der Benutzer das Passwort beim ersten Login ändern.)
+Aktion: Auf Save klicken.

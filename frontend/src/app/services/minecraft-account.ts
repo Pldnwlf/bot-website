@@ -48,7 +48,14 @@ export class MinecraftAccountService {
     const body = {accountIds};
     return this.http.post(`${this.apiUrl}/bots/stopmultiple`, body);
   }
+  bulkImportAccounts(file: File): Observable<any> {
+    const formData = new FormData();
+    // The name 'accountsFile' must match the name used in the backend's upload.single() middleware.
+    formData.append('accountsFile', file, file.name);
 
-
+    // When sending FormData, you don't manually set the 'Content-Type' header.
+    // The browser does it automatically with the correct boundary.
+    return this.http.post(`${this.apiUrl}/minecraft-accounts/bulk-import`, formData);
+  }
 
 }

@@ -1,0 +1,12 @@
+// frontend/src/app/components/account-management/account-management.scss
+.file-input-container {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.file-name {
+  font-style: italic;
+  color: #666;
+}

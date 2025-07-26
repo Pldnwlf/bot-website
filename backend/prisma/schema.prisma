@@ -26,7 +26,7 @@ model MinecraftAccount {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  session           BotSession?
+  session BotSession?
 }
 
 model BotSession {
@@ -39,7 +39,8 @@ model BotSession {
   lastKickReason         String? // Hier speichern wir die Kick-Nachricht
   lastSeenAt             DateTime @default(now())
 
-  // Relation: Jede Session gehört zu genau einem MinecraftAccount
+  authProfile Json?
+
   account   MinecraftAccount @relation(fields: [accountId], references: [accountId])
   accountId String           @unique // Stellt eine 1-zu-1-Beziehung sicher
 }
