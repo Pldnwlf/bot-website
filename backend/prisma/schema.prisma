@@ -1,32 +1,46 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Block 1: Definiert den Prisma Client Generator
 generator client {
   provider = "prisma-client-js"
 }
 
-// Block 2: Definiert die Datenquelle (Dies hat gefehlt!)
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-// Block 3: Deine Datenmodelle
+// Enum für einen klaren und typsicheren Account-Status
+enum AccountStatus {
+  PENDING_VERIFICATION // Account wurde erstellt, aber der Benutzer hat sich noch nicht über den Link angemeldet.
+  ACTIVE               // Account wurde erfolgreich verifiziert und kann genutzt werden.
+  SUSPENDED            // Account wurde manuell oder automatisch deaktiviert.
+}
+
 model MinecraftAccount {
-  accountId      String  @id @default(uuid())
-  keycloakUserId String?
+  accountId      String        @id @default(uuid())
+  keycloakUserId String        // Sollte nicht optional sein, da jeder Account einem User gehört.
+  loginEmail     String        @unique
+  ingameName     String?       // Wird nach der ersten erfolgreichen Anmeldung gesetzt.
 
-  loginEmail String @unique
+  // NEU: Status zur Nachverfolgung des Account-Zustands.
+  status         AccountStatus @default(PENDING_VERIFICATION)
 
-  ingameName String?
+  // NEU: Speichert den Inhalt der von Mineflayer generierten Authentifizierungs-JSON-Datei.
+  // Dies ersetzt die Speicherung auf der Festplatte und macht das System portabler.
+  authenticationCache Json?
 
-  encryptedPassword Bytes
-  iv                Bytes
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  // Die Passwort-Felder werden komplett entfernt. Sie sind nicht mehr nötig.
+  // encryptedPassword Bytes
+  // iv                Bytes
 
   session BotSession?
+
+  // Ein Index auf keycloakUserId beschleunigt das Abrufen aller Accounts eines Benutzers.
+  @@index([keycloakUserId])
 }
 
 model BotSession {
@@ -35,12 +49,13 @@ model BotSession {
   lastKnownServerPort    Int?
   lastKnownVersion       String?
   isActive               Boolean  @default(false)
-  status                 String   @default("offline") // z.B. 'offline', 'connecting', 'online', 'error'
-  lastKickReason         String? // Hier speichern wir die Kick-Nachricht
+  status                 String   @default("offline") // z.B. 'offline', 'connecting', 'online_on_server', 'error', 'kicked'
+  lastKickReason         String?
   lastSeenAt             DateTime @default(now())
 
-  authProfile Json?
+  // Dieses Feld wird durch `authenticationCache` im Hauptmodell ersetzt, um Daten zentral zu halten.
+  // authProfile Json?
 
-  account   MinecraftAccount @relation(fields: [accountId], references: [accountId])
-  accountId String           @unique // Stellt eine 1-zu-1-Beziehung sicher
+  account   MinecraftAccount @relation(fields: [accountId], references: [accountId], onDelete: Cascade) // onDelete: Cascade löscht die Session, wenn der Account gelöscht wird.
+  accountId String           @unique
 }

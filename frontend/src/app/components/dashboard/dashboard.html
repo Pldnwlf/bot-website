@@ -59,14 +59,15 @@
             [aria-label]="'Select account ' + (account.ingameName || account.loginEmail)">
           </mat-checkbox>
 
-          <div matListItemTitle>{{ account.ingameName || account.loginEmail }}</div>
+        <div matListItemTitle>{{ account.ingameName || account.loginEmail }}</div>
         <div matListItemLine
-             [ngClass]="{
-       'status-connecting': account.session?.status?.includes('Connecting'),
-       'status-online': account.session?.status?.startsWith('online'),
-       'status-offline': !account.session?.status?.startsWith('online') && !account.session?.status?.includes('Connecting'),
-       'status-error': isErrorStatus(account.session?.status)
-     }">
+               [ngClass]="{
+         'status-connecting': account.session?.status?.includes('Connecting'),
+         'status-waiting': account.session?.status?.includes('Waiting'),
+         'status-online': account.session?.status?.startsWith('online'),
+         'status-offline': !account.session?.status?.startsWith('online') && !account.session?.status?.includes('Connecting'),
+         'status-error': isErrorStatus(account.session?.status)
+       }">
           Status: {{ account.session?.status || 'offline' }}
         </div>
 

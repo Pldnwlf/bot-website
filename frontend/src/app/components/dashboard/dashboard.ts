@@ -9,11 +9,13 @@ import { MatInputModule } from '@angular/material/input';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { MatCheckboxModule } from '@angular/material/checkbox';
-import {MatSnackBar} from "@angular/material/snack-bar";
-import { MatIcon } from '@angular/material/icon';
+import { MatSnackBar } from "@angular/material/snack-bar";
+import { MatIcon, MatIconModule } from '@angular/material/icon';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MinecraftAccount, MinecraftAccountService } from '../../services/minecraft-account';
 import { WebsocketService, WebSocketMessage } from '../../services/websocket';
 import { Subscription } from 'rxjs';
+import { DeviceLoginDialogComponent, DeviceLoginData } from '../device-login-dialog/device-login-dialog';
 
 @Component({
   selector: 'app-dashboard',
@@ -28,6 +30,7 @@ import { Subscription } from 'rxjs';
     MatCheckboxModule,
     FormsModule,
     MatIcon,
+    MatDialogModule,
   ],
   templateUrl: './dashboard.html',
   styleUrls: ['./dashboard.scss']
@@ -45,7 +48,8 @@ export class Dashboard implements OnInit, OnDestroy {
   constructor(
     private accountService: MinecraftAccountService,
     private websocketService: WebsocketService,
-    private snackBar: MatSnackBar
+    private snackBar: MatSnackBar,
+  public dialog: MatDialog
   ) {
     this.selection = new SelectionModel<MinecraftAccount>(true, []);
   }
@@ -78,6 +82,13 @@ export class Dashboard implements OnInit, OnDestroy {
       }
 
       switch (msg.type) {
+        case 'device_login_prompt':
+          account.session.status = 'Waiting for device login...';
+          this.isLoading[account.accountId] = false; // Ist kein "laden", sondern "warten"
+          this.handleDeviceLogin(msg.payload.accountId, msg.payload.message);
+          isTerminalStatus = true;
+          break;
+
         case 'status':
           if (msg.payload.status === 'offline' && msg.payload.reason) {
             account.session.status = `Offline (${msg.payload.reason})`;
@@ -110,6 +121,29 @@ export class Dashboard implements OnInit, OnDestroy {
         this.isLoading[account.accountId] = false; // Ensure loading is stopped
       }
     });
+  }
+
+  handleDeviceLogin(accountId: string, message: string): void {
+    const urlRegex = /(https:\/\/www\.microsoft\.com\/link)/;
+    const codeRegex = /enter the code ([A-Z0-9]+)/;
+
+    const urlMatch = message.match(urlRegex);
+    const codeMatch = message.match(codeRegex);
+
+    if (urlMatch && codeMatch) {
+      const loginData: DeviceLoginData = {
+        url: urlMatch[1],
+        code: codeMatch[1]
+      };
+      this.dialog.open(DeviceLoginDialogComponent, {
+        width: '500px',
+        data: loginData,
+        disableClose: true // Verhindert das Schließen durch Klick außerhalb
+      });
+    } else {
+      // Fallback, falls das Parsing fehlschlägt
+      this.showNotification(`Login required for account ${accountId}: ${message}`, true);
+    }
   }
 
   isAllSelected() {

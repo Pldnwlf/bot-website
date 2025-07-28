@@ -5,13 +5,17 @@
   <mat-card class="form-card">
     <mat-card-header>
       <mat-card-title>Add New Minecraft Account</mat-card-title>
+      <mat-card-subtitle>
+        Add your Microsoft account email. You will be prompted to log in via a secure link when you start the bot for the first time.
+      </mat-card-subtitle>
     </mat-card-header>
     <mat-card-content>
-      <form [formGroup]="addAccountForm" (ngSubmit)="onAddAccountSubmit()">
+      <form [formGroup]="addAccountForm" (ngSubmit)="onAddAccountSubmit()" class="add-form">
 
-        <mat-form-field appearance="outline">
-          <mat-label>Login Email</mat-label>
-          <input matInput formControlName="loginEmail" type="email" placeholder="user@example.com">
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Microsoft Account Email</mat-label>
+          <input matInput formControlName="loginEmail" type="email" placeholder="user@example.com" required>
+          <mat-icon matSuffix>email</mat-icon>
           @if (loginEmail?.invalid && (loginEmail?.dirty || loginEmail?.touched)) {
             <mat-error>
               @if (loginEmail?.errors?.['required']) { Email is required. }
@@ -20,78 +24,37 @@
           }
         </mat-form-field>
 
-        <mat-form-field appearance="outline">
-          <mat-label>Password</mat-label>
-          <input matInput formControlName="password" type="password">
-          @if (password?.invalid && (password?.dirty || password?.touched)) {
-            <mat-error>
-              @if (password?.errors?.['required']) { Password is required. }
-              @if (password?.errors?.['minlength']) { Password must be at least 8 characters long. }
-            </mat-error>
-          }
-        </mat-form-field>
-
         <button mat-flat-button color="primary" type="submit" [disabled]="addAccountForm.invalid || isLoading">
+          <mat-icon>add</mat-icon>
           @if(isLoading) { Adding... } @else { Add Account }
         </button>
       </form>
     </mat-card-content>
   </mat-card>
 
-  <!-- Karte für den Bulk Import -->
-  <mat-card class="form-card">
-    <mat-card-header>
-      <mat-card-title>Bulk Import Accounts</mat-card-title>
-      <mat-card-subtitle>Upload a JSON file with account credentials.</mat-card-subtitle>
-    </mat-card-header>
-    <mat-card-content>
-      <p>
-        The JSON file must be an array of objects, each with a "loginEmail" and "password" property. Example:
-      </p>
-
-      <div class="file-input-container">
-        <button type="button" mat-stroked-button (click)="fileInput.click()">
-          <mat-icon>attach_file</mat-icon>
-          Choose File
-        </button>
-        <input hidden #fileInput type="file" (change)="onFileSelected($event)" accept=".json">
-
-        @if(selectedFile) {
-          <span class="file-name">{{ selectedFile.name }}</span>
-        }
-      </div>
-
-    </mat-card-content>
-    <mat-card-actions>
-      <button mat-flat-button color="primary" (click)="onBulkImportSubmit()" [disabled]="!selectedFile || isUploading">
-        @if(isUploading) { Uploading... } @else { Upload and Import }
-      </button>
-    </mat-card-actions>
-  </mat-card>
-
   <!-- Liste der bestehenden Accounts -->
-  <h2>Your Accounts</h2>
-  @if(isLoading && accounts.length === 0) {
-    <mat-progress-bar mode="indeterminate"></mat-progress-bar>
-  }
+  <div class="account-list-header">
+    <h2>Your Linked Accounts</h2>
+    <mat-progress-bar mode="indeterminate" *ngIf="isListLoading"></mat-progress-bar>
+  </div>
 
-  <mat-list role="list">
+  <mat-list role="list" class="account-list">
     @for(account of accounts; track account.accountId) {
       <mat-list-item role="listitem">
-        <mat-icon matListItemIcon>person</mat-icon>
-        <div matListItemTitle>{{ account.ingameName || 'Name not available yet' }}</div>
-        <div matListItemLine>{{ account.loginEmail }}</div>
-
-        <button mat-icon-button color="warn"
-                (click)="deleteAccount(account.accountId, account.ingameName || account.loginEmail); $event.stopPropagation()"
-                matListItemMeta
-                aria-label="Delete this account">
-          <mat-icon>delete</mat-icon>
-        </button>
+        <mat-icon matListItemIcon class="account-icon">person_outline</mat-icon>
+        <div matListItemTitle class="account-name">{{ account.ingameName || 'Name will appear after first login' }}</div>
+        <div matListItemLine class="account-email">{{ account.loginEmail }}</div>
+        <div matListItemMeta class="actions">
+          <button mat-icon-button color="warn"
+                  (click)="deleteAccount(account.accountId, account.ingameName || account.loginEmail)"
+                  matTooltip="Delete this account">
+            <mat-icon>delete_forever</mat-icon>
+          </button>
+        </div>
       </mat-list-item>
     } @empty {
-      @if(!isLoading) {
-        <p>No accounts found. Add one using the form above.</p>
+      @if(!isListLoading) {
+        <p class="empty-list-message">No accounts found. Add one using the form above.</p>
       }
     }
   </mat-list>

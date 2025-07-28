@@ -1,12 +1,63 @@
-// frontend/src/app/components/account-management/account-management.scss
-.file-input-container {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-top: 16px;
+.management-container {
+  padding: 24px;
+  max-width: 900px;
+  margin: auto;
 }
 
-.file-name {
-  font-style: italic;
-  color: #666;
+h1 {
+  margin-bottom: 24px;
+}
+
+.form-card {
+  margin-bottom: 32px;
+}
+
+.add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.account-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+
+  h2 {
+    margin: 0;
+  }
+}
+
+.account-list {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  overflow: hidden;
+
+  mat-list-item {
+    height: 72px !important; // Sorgt für konsistente Höhe
+
+    .account-icon {
+      color: #666;
+    }
+
+    .account-name {
+      font-weight: 500;
+    }
+
+    .account-email {
+      font-size: 0.9em;
+      color: #757575;
+    }
+  }
+}
+
+.empty-list-message {
+  padding: 24px;
+  text-align: center;
+  color: #757575;
 }

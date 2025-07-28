@@ -1,0 +1,43 @@
+:host {
+  display: block;
+}
+
+.login-link {
+  margin-top: 8px;
+  text-decoration: none;
+
+  mat-icon {
+    margin-right: 8px;
+  }
+}
+
+.code-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  margin-bottom: 24px;
+}
+
+.code-box {
+  font-family: 'Courier New', Courier, monospace;
+  background-color: #f0f0f0;
+  border: 1px solid #e0e0e0;
+  padding: 12px 18px;
+  border-radius: 6px;
+  font-size: 1.4em;
+  font-weight: bold;
+  letter-spacing: 3px;
+  color: #333;
+}
+
+.waiting-bar {
+  margin-top: 20px;
+}
+
+.waiting-text {
+  text-align: center;
+  font-style: italic;
+  color: #666;
+  margin-top: 8px;
+}
