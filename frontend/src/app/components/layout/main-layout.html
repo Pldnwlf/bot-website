@@ -2,7 +2,7 @@
 <mat-sidenav-container class="sidenav-container">
 
   <!-- 1. Die Seitenleiste (Navigation) -->
-  <mat-sidenav #drawer mode="side" opened class="sidenav">
+  <mat-sidenav mode="side" opened class="sidenav">
     <mat-toolbar>
       Menu
     </mat-toolbar>
@@ -39,13 +39,6 @@
         <mat-icon>logout</mat-icon>
       </button>
     </mat-toolbar>
-
-    <!--
-      DER WICHTIGSTE TEIL:
-      Hier rendert der Angular Router die Komponente für die aktuelle URL.
-      Wenn die URL /dashboard ist, wird hier die DashboardComponent angezeigt.
-      Wenn die URL /chat ist, wird hier die ChatComponent angezeigt.
-    -->
     <main class="content">
       <router-outlet></router-outlet>
     </main>

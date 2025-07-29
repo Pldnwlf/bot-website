@@ -10,36 +10,24 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Enum für einen klaren und typsicheren Account-Status
 enum AccountStatus {
-  PENDING_VERIFICATION // Account wurde erstellt, aber der Benutzer hat sich noch nicht über den Link angemeldet.
-  ACTIVE               // Account wurde erfolgreich verifiziert und kann genutzt werden.
-  SUSPENDED            // Account wurde manuell oder automatisch deaktiviert.
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
 }
 
 model MinecraftAccount {
-  accountId      String        @id @default(uuid())
-  keycloakUserId String        // Sollte nicht optional sein, da jeder Account einem User gehört.
-  loginEmail     String        @unique
-  ingameName     String?       // Wird nach der ersten erfolgreichen Anmeldung gesetzt.
-
-  // NEU: Status zur Nachverfolgung des Account-Zustands.
-  status         AccountStatus @default(PENDING_VERIFICATION)
-
-  // NEU: Speichert den Inhalt der von Mineflayer generierten Authentifizierungs-JSON-Datei.
-  // Dies ersetzt die Speicherung auf der Festplatte und macht das System portabler.
-  authenticationCache Json?
-
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-
-  // Die Passwort-Felder werden komplett entfernt. Sie sind nicht mehr nötig.
-  // encryptedPassword Bytes
-  // iv                Bytes
+  accountId             String        @id @default(uuid())
+  keycloakUserId        String
+  loginEmail            String        @unique
+  ingameName            String?
+  status                AccountStatus @default(PENDING_VERIFICATION)
+  authenticationCache   Json?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
 
   session BotSession?
 
-  // Ein Index auf keycloakUserId beschleunigt das Abrufen aller Accounts eines Benutzers.
   @@index([keycloakUserId])
 }
 
@@ -49,13 +37,10 @@ model BotSession {
   lastKnownServerPort    Int?
   lastKnownVersion       String?
   isActive               Boolean  @default(false)
-  status                 String   @default("offline") // z.B. 'offline', 'connecting', 'online_on_server', 'error', 'kicked'
+  status                 String   @default("offline")
   lastKickReason         String?
   lastSeenAt             DateTime @default(now())
 
-  // Dieses Feld wird durch `authenticationCache` im Hauptmodell ersetzt, um Daten zentral zu halten.
-  // authProfile Json?
-
-  account   MinecraftAccount @relation(fields: [accountId], references: [accountId], onDelete: Cascade) // onDelete: Cascade löscht die Session, wenn der Account gelöscht wird.
+  account   MinecraftAccount @relation(fields: [accountId], references: [accountId], onDelete: Cascade)
   accountId String           @unique
 }

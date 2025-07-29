@@ -1,9 +1,11 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-// Wichtig für die Navigation und die Anzeige der Kinder-Routen
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
-import { AuthService } from '../../services/auth'; // Importiere unseren neuen Service
-// Importiere alle Angular Material Module, die im Template verwendet werden
+
+// Services
+import { AuthService } from '../../services/auth';
+import { WebsocketService } from '../../services/websocket';
+
 import { MatSidenavModule } from '@angular/material/sidenav';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatListModule } from '@angular/material/list';
@@ -14,13 +16,10 @@ import { MatButtonModule } from '@angular/material/button';
   selector: 'app-main-layout',
   standalone: true,
   imports: [
-    // Standard-Module
     CommonModule,
-
-    // Routing-Module
-    RouterOutlet, // Unverzichtbar, hier werden Dashboard, Chat etc. gerendert
-    RouterLink,   // Ermöglicht das Klicken auf Links (z.B. [routerLink]="/dashboard")
-    RouterLinkActive, // Hebt den aktiven Link hervor
+    RouterOutlet,
+    RouterLink,
+    RouterLinkActive,
 
     // Angular Material Module
     MatSidenavModule,
@@ -32,13 +31,18 @@ import { MatButtonModule } from '@angular/material/button';
   templateUrl: './main-layout.html',
   styleUrls: ['./main-layout.scss']
 })
-export class MainLayoutComponent {
-  // Wir injecten den KeycloakService, um auf seine Methoden zugreifen zu können
-  constructor(private readonly authService: AuthService) {}
+export class MainLayoutComponent implements OnInit {
+  constructor(
+    private readonly authService: AuthService,
+    private readonly websocketService: WebsocketService
+  ) {}
 
-  // Diese Methode wird vom Logout-Button im Template aufgerufen
+  ngOnInit(): void {
+    // Hier wird die WebSocket-Verbindung nach erfolgreichem Login aufgebaut.
+    this.websocketService.connect();
+  }
+
   logout(): void {
-    // Ruft die Logout-URL von Keycloak auf und leitet den Benutzer um
     this.authService.logout();
   }
 }

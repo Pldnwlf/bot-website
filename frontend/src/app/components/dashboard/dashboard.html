@@ -47,7 +47,7 @@
       </mat-list-item>
 
       <!-- Liste der einzelnen Accounts -->
-      @for (account of accounts; track account.accountId) {
+      @for (account of activeAccounts; track account.accountId) {
         <!-- Die ganze Zeile ist klickbar, um die Auswahl umzuschalten -->
         <mat-list-item (click)="selection.toggle(account)" [class.selected-item]="selection.isSelected(account)">
           <!-- Die individuelle Checkbox -->
@@ -78,7 +78,7 @@
           </div>
         </mat-list-item>
       } @empty {
-        <p class="empty-list-message">No accounts found.</p>
+        <p class="empty-list-message">No active accounts found. Please add and verify one in the 'Accounts' section.</p>
       }
     </mat-list>
   </div>
