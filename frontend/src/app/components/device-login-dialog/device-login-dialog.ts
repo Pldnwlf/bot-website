@@ -7,11 +7,14 @@ import { ClipboardModule, Clipboard } from '@angular/cdk/clipboard';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MinecraftAccountService } from '../../services/minecraft-account';
+
 
 // Interface für die Daten, die der Dialog erhält
 export interface DeviceLoginData {
   url: string;
   code: string;
+  accountId: string;
 }
 
 @Component({
@@ -32,15 +35,31 @@ export interface DeviceLoginData {
 })
 export class DeviceLoginDialogComponent {
   public data: DeviceLoginData;
+  isFinalizing = false;
 
   constructor(
     public dialogRef: MatDialogRef<DeviceLoginDialogComponent>,
     @Inject(MAT_DIALOG_DATA) data: DeviceLoginData,
     private clipboard: Clipboard,
-    private snackBar: MatSnackBar
-  ) {
+    private snackBar: MatSnackBar,
+    private accountService: MinecraftAccountService
+) {
     this.data = data;
   }
+
+  onFinalize(): void {
+    this.isFinalizing = true;
+    this.accountService.finalizeAddAccount(this.data.accountId).subscribe({
+      next: () => {
+        this.snackBar.open('Verification successful!', 'OK', { duration: 3000 });
+      },
+      error: (err) => {
+        this.snackBar.open(err.error?.error || 'Verification failed.', 'Close', { duration: 5000, panelClass: ['error-snackbar'] });
+        this.isFinalizing = false;
+      }
+    });
+  }
+
 
   copyCode(): void {
     this.clipboard.copy(this.data.code);
