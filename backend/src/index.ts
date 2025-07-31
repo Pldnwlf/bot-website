@@ -177,148 +177,86 @@ async function createBotInstance(accountId: string, loginEmail: string, authCach
 // =========================================================================
 // API ENDPUNKTE
 // =========================================================================
+
 app.post('/api/accounts/initiate-add', keycloak.protect(), async (req: any, res) => {
     const { loginEmail } = req.body;
     const keycloakUserId = req.kauth.grant.access_token.content.sub;
-    logger.info(`[1/4] Received 'initiate-add' request for email: ${loginEmail}`);
+    logger.info(`[1/3] Received 'initiate-add' request for email: ${loginEmail}`);
 
-    let account;
     try {
-        account = await prisma.minecraftAccount.create({
+        const MS_CLIENT_ID = process.env.MS_CLIENT_ID;
+        if (!MS_CLIENT_ID) throw new Error("Microsoft Client ID (MS_CLIENT_ID) is not configured in .env file.");
+
+        // Wir erstellen den PENDING-Account zuerst, um Race Conditions zu vermeiden.
+        const account = await prisma.minecraftAccount.create({
             data: { loginEmail, keycloakUserId, status: 'PENDING_VERIFICATION', session: { create: {} } },
         });
-        logger.info(`[2/4] Created PENDING account in DB: ${account.accountId}`);
-    } catch (e: any) {
-        if (e.code === 'P2002') {
-            logger.warn(`[WARN] Account already exists: ${loginEmail}`);
-            return res.status(409).json({ error: 'An account with this email already exists.' });
-        }
-        logger.error('[FATAL] Could not create PENDING account in DB.', { error: e });
-        return res.status(500).json({ error: 'Database error.' });
-    }
+        logger.info(`[2/3] Created PENDING account: ${account.accountId}.`);
 
-    const { accountId } = account;
+        const authData = await new Promise<{ code: string, url: string }>((resolve, reject) => {
+            // WICHTIG: Wir verwenden hier die `prismarine-auth`-Bibliothek direkt, weil sie uns die saubere Callback-API gibt.
+            const authflow = new Authflow(loginEmail, msaFolderPath, {
+                msalConfig: { auth: { clientId: MS_CLIENT_ID, authority: 'https://login.microsoftonline.com/common' } }
+            }, (data) => resolve({ code: data.user_code, url: data.verification_uri }));
 
-    try {
-        const result = await new Promise<{ accountId: string, auth: { url: string, code: string } }>((resolve, reject) => {
-
-            const onMsaCodeCallback = (data: { user_code: string, verification_uri: string, message: string }) => {
-                logger.info(`[3/4] Login data received via onMsaCode callback.`);
-
-                // KORREKTUR: Wir verwenden die strukturierten Daten direkt, anstatt zu parsen.
-                // data.verification_uri ist der Link
-                // data.user_code ist der Code
-                if (!data.verification_uri || !data.user_code) {
-                    return reject(new Error('Received incomplete authentication data from Microsoft.'));
-                }
-
-                resolve({
-                    accountId: accountId,
-                    auth: {
-                        url: data.verification_uri,
-                        code: data.user_code
-                    }
-                });
-            };
-
-            const bot = mineflayer.createBot({
-                username: loginEmail,
-                auth: 'microsoft',
-                skipValidation: true,
-                profilesFolder: msaFolderPath,
-                hideErrors: true,
-                onMsaCode: onMsaCodeCallback
-            });
-
-            bot.once('login', () => reject(new Error('This account appears to be already linked.')));
-            setTimeout(() => reject(new Error('Authentication process timed out.')), 30000);
+            authflow.getMsaToken().catch(reject);
+            setTimeout(() => reject(new Error('Authentication process timed out.')), 60000); // 60s Timeout
         });
 
-        logger.info(`[4/4] Successfully generated auth data. Sending to frontend.`);
-        res.status(200).json(result);
+        logger.info(`[3/3] Successfully retrieved auth data. Sending to frontend.`);
+        res.status(200).json({ accountId: account.accountId, auth: authData });
 
     } catch (error: any) {
-        logger.error(`[FATAL] Failed during link generation for ${loginEmail}. Cleaning up PENDING account.`, { error: error });
-
-        await prisma.minecraftAccount.delete({ where: { accountId } }).catch();
-
-        const errorMessage = error.message && error.message.includes('already linked')
-            ? error.message
-            : 'Failed to initiate the authentication process.';
-        return res.status(500).json({ error: errorMessage });
+        logger.error(`Failed during initiate-add`, { error: error.message });
+        if (error.code === 'P2002') return res.status(409).json({ error: 'An account with this email already exists.' });
+        // Wenn ein Fehler auftritt, löschen wir den eventuell erstellten PENDING-Account
+        if (loginEmail) await prisma.minecraftAccount.delete({ where: { loginEmail } }).catch(()=>{});
+        return res.status(500).json({ error: 'Failed to initiate authentication.' });
     }
 });
 
 app.post('/api/accounts/finalize-add/:accountId', keycloak.protect(), async (req: any, res) => {
     const { accountId } = req.params;
     const keycloakUserId = req.kauth.grant.access_token.content.sub;
-    logger.info(`[FINALIZE 1/9] Received 'finalize-add' request for account: ${accountId}`);
+    logger.info(`[4/4] Received 'finalize-add' request for account: ${accountId}`);
 
     const account = await prisma.minecraftAccount.findFirst({
         where: { accountId, keycloakUserId }
     });
-    if (!account) return res.status(404).json({ error: 'Account not found or permission denied.' });
-    logger.info(`[FINALIZE 2/9] Found PENDING account in DB for email: ${account.loginEmail}`);
+    if (!account) return res.status(404).json({ error: 'Account not found.' });
 
     try {
-        const hash = createHash('md5').update(account.loginEmail).digest('hex');
-        const filePrefix = hash.substring(0, 6);
-        logger.info(`[FINALIZE 3/9] Calculated file prefix: ${filePrefix}`);
+        const MS_CLIENT_ID = process.env.MS_CLIENT_ID;
+        if (!MS_CLIENT_ID) throw new Error("Microsoft Client ID (MS_CLIENT_ID) is not configured in .env file.");
 
-        // Ab hier ist der Code wieder wie in unserem vorherigen Versuch
-        const msalCachePath = path.join(msaFolderPath, `${filePrefix}_msal-cache.json`);
-        const mcaCachePath = path.join(msaFolderPath, `${filePrefix}_mca-cache.json`);
-        const xblCachePath = path.join(msaFolderPath, `${filePrefix}_xbl-cache.json`);
+        const authflow = new Authflow(account.loginEmail, msaFolderPath, {
+            msalConfig: { auth: { clientId: MS_CLIENT_ID, authority: 'https://login.microsoftonline.com/common' } }
+        });
 
-        logger.info(`[FINALIZE 4/9] Reading cache files...`);
-
-        const msalContent = await readCacheFile(msalCachePath);
-        const mcaContent = await readCacheFile(mcaCachePath);
-        const xblContent = await readCacheFile(xblCachePath);
-
-        logger.info('[FINALIZE 5/9] Raw content of cache files read successfully.');
-
-        const fullCache = {
-            ...(typeof msalContent === 'object' && msalContent !== null && !Array.isArray(msalContent) ? msalContent : {}),
-            ...(typeof mcaContent === 'object' && mcaContent !== null && !Array.isArray(mcaContent) ? mcaContent : {}),
-            ...(typeof xblContent === 'object' && xblContent !== null && !Array.isArray(xblContent) ? xblContent : {})
-        };
-        logger.info(`[FINALIZE 6/9] Merged cache object created.`);
-
-        const ingameName = (fullCache as any)?.mca?.profile?.name || 'Unknown';
-        logger.info(`[FINALIZE 8/9] Extracted ingame name: ${ingameName}`);
-
-        if (ingameName === 'Unknown' || Object.keys(fullCache).length === 0) {
-            throw new Error('Could not find profile name or cache is empty.');
-        }
+        const { profile } = await authflow.getMinecraftJavaToken({ fetchProfile: true });
+        const ingameName = profile?.name || 'Unknown';
+        const newCache = await (authflow as any).cache.getCached();
 
         await prisma.minecraftAccount.update({
             where: { accountId },
-            data: {
-                status: 'ACTIVE',
-                ingameName,
-                authenticationCache: fullCache
-            }
+            data: { status: 'ACTIVE', ingameName, authenticationCache: newCache }
         });
 
-        logger.info(`[FINALIZE 9/9] Successfully updated account in DB. Cleaning up files...`);
-
-        const filesToDelete = [msalCachePath, mcaCachePath, xblCachePath, path.join(msaFolderPath, `${filePrefix}_live-cache.json`)];
-        for (const filePath of filesToDelete) {
-            await fs.unlink(filePath).catch(() => {});
+        const files = await fs.readdir(msaFolderPath);
+        for (const file of files) {
+            if (file.startsWith((authflow as any).cache.username)) {
+                await fs.unlink(path.join(msaFolderPath, file));
+            }
         }
 
         broadcast({ type: 'accounts_updated' });
-        logger.info(`Account ${accountId} finalized and set to ACTIVE as ${ingameName}.`);
+        logger.info(`Account ${accountId} finalized as ${ingameName}.`);
         return res.status(200).json({ message: 'Account successfully verified.' });
 
     } catch(error: any) {
-        logger.error(`[FINALIZE FATAL] Could not finalize account ${accountId}.`, {
-            errorMessage: error.message,
-            errorStack: error.stack
-        });
+        logger.error(`Could not finalize account ${accountId}.`, { error: error.message });
         await prisma.minecraftAccount.delete({ where: { accountId } }).catch();
-        return res.status(400).json({ error: 'Verification failed. Please check server logs and try again.' });
+        return res.status(400).json({ error: 'Verification failed. The Microsoft login may not have been completed or the session expired. Please try again.' });
     }
 });
 
