@@ -16,6 +16,7 @@ import logger from './logger';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Authflow, Titles } from 'prismarine-auth';
+import { createHash } from 'crypto';
 
 const app = express();
 const prisma = new PrismaClient();
@@ -251,44 +252,75 @@ app.post('/api/accounts/initiate-add', keycloak.protect(), async (req: any, res)
 app.post('/api/accounts/finalize-add/:accountId', keycloak.protect(), async (req: any, res) => {
     const { accountId } = req.params;
     const keycloakUserId = req.kauth.grant.access_token.content.sub;
-    logger.info(`[4/4] Received 'finalize-add' request for account: ${accountId}`);
+    logger.info(`[FINALIZE 1/9] Received 'finalize-add' request for account: ${accountId}`);
 
     const account = await prisma.minecraftAccount.findFirst({
         where: { accountId, keycloakUserId }
     });
-
-    if (!account) {
-        logger.error("Account does not exist or permission denied");
-        return res.status(404).json({ error: 'Account not found or permission denied.' });
-    }
-
-    const profilePath = path.join(msaFolderPath, `${account.loginEmail}.json`);
+    if (!account) return res.status(404).json({ error: 'Account not found or permission denied.' });
+    logger.info(`[FINALIZE 2/9] Found PENDING account in DB for email: ${account.loginEmail}`);
 
     try {
-        const newCache = await readCacheFile(profilePath);
-        const ingameName = (newCache as any)?.profile?.name || 'Unknown';
+        const hash = createHash('md5').update(account.loginEmail).digest('hex');
+        const filePrefix = hash.substring(0, 6);
+        logger.info(`[FINALIZE 3/9] Calculated file prefix: ${filePrefix}`);
 
-        if (newCache && typeof newCache === 'object' && !Array.isArray(newCache)) {
-            await prisma.minecraftAccount.update({
-                where: { accountId },
-                data: { status: 'ACTIVE', ingameName, authenticationCache: newCache }
-            });
+        // Ab hier ist der Code wieder wie in unserem vorherigen Versuch
+        const msalCachePath = path.join(msaFolderPath, `${filePrefix}_msal-cache.json`);
+        const mcaCachePath = path.join(msaFolderPath, `${filePrefix}_mca-cache.json`);
+        const xblCachePath = path.join(msaFolderPath, `${filePrefix}_xbl-cache.json`);
 
-            await fs.unlink(profilePath); // Temporäre Datei löschen
+        logger.info(`[FINALIZE 4/9] Reading cache files...`);
 
-            broadcast({ type: 'accounts_updated' });
-            logger.info(`Account ${accountId} finalized and set to ACTIVE.`);
-            return res.status(200).json({ message: 'Account successfully verified.' });
-        } else {
-            throw new Error('Cache is not a valid object.');
+        const msalContent = await readCacheFile(msalCachePath);
+        const mcaContent = await readCacheFile(mcaCachePath);
+        const xblContent = await readCacheFile(xblCachePath);
+
+        logger.info('[FINALIZE 5/9] Raw content of cache files read successfully.');
+
+        const fullCache = {
+            ...(typeof msalContent === 'object' && msalContent !== null && !Array.isArray(msalContent) ? msalContent : {}),
+            ...(typeof mcaContent === 'object' && mcaContent !== null && !Array.isArray(mcaContent) ? mcaContent : {}),
+            ...(typeof xblContent === 'object' && xblContent !== null && !Array.isArray(xblContent) ? xblContent : {})
+        };
+        logger.info(`[FINALIZE 6/9] Merged cache object created.`);
+
+        const ingameName = (fullCache as any)?.mca?.profile?.name || 'Unknown';
+        logger.info(`[FINALIZE 8/9] Extracted ingame name: ${ingameName}`);
+
+        if (ingameName === 'Unknown' || Object.keys(fullCache).length === 0) {
+            throw new Error('Could not find profile name or cache is empty.');
         }
 
-    } catch(error) {
-        logger.error(`Could not find or process cache file for ${accountId}. Maybe the login was not completed?`, { error });
-        return res.status(404).json({ error: 'Verification failed. Please close the dialog and try adding the account again.' });
+        await prisma.minecraftAccount.update({
+            where: { accountId },
+            data: {
+                status: 'ACTIVE',
+                ingameName,
+                authenticationCache: fullCache
+            }
+        });
+
+        logger.info(`[FINALIZE 9/9] Successfully updated account in DB. Cleaning up files...`);
+
+        const filesToDelete = [msalCachePath, mcaCachePath, xblCachePath, path.join(msaFolderPath, `${filePrefix}_live-cache.json`)];
+        for (const filePath of filesToDelete) {
+            await fs.unlink(filePath).catch(() => {});
+        }
+
+        broadcast({ type: 'accounts_updated' });
+        logger.info(`Account ${accountId} finalized and set to ACTIVE as ${ingameName}.`);
+        return res.status(200).json({ message: 'Account successfully verified.' });
+
+    } catch(error: any) {
+        logger.error(`[FINALIZE FATAL] Could not finalize account ${accountId}.`, {
+            errorMessage: error.message,
+            errorStack: error.stack
+        });
+        await prisma.minecraftAccount.delete({ where: { accountId } }).catch();
+        return res.status(400).json({ error: 'Verification failed. Please check server logs and try again.' });
     }
 });
-
 
 app.get('/api/accounts', keycloak.protect(), async (req: any, res) => {
     const keycloakUserId = req.kauth.grant.access_token.content.sub;
