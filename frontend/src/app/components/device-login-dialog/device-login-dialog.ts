@@ -10,7 +10,6 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MinecraftAccountService } from '../../services/minecraft-account';
 
 
-// Interface für die Daten, die der Dialog erhält
 export interface DeviceLoginData {
   url: string;
   code: string;

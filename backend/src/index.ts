@@ -15,6 +15,7 @@ import http from 'http';
 import logger from './logger';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { Authflow, Titles } from 'prismarine-auth';
 
 const app = express();
 const prisma = new PrismaClient();
@@ -54,6 +55,37 @@ app.use(session({
     store: memoryStore
 }));
 app.use(keycloak.middleware());
+
+// =========================================================================
+//  HELFERFUNKTION: Kapselt die Logik zum Holen des Links
+// =========================================================================
+// async function getMicrosoftAuthLink(email: string): Promise<{ user_code: string, verification_uri: string }> {
+//     return new Promise((resolve, reject) => {
+//         const codeCallback = (data: any) => {
+//             logger.info(`[prismarine-auth] Device code received via codeCallback for ${email}`);
+//             resolve(data);
+//         };
+//
+//         const authflow = new Authflow(
+//             email,                        // 1. username
+//             msaFolderPath,                // 2. cache
+//             {                             // 3. options-Objekt
+//                 authTitle: Titles.MinecraftJava,
+//                 flow: 'msal'
+//             },
+//             codeCallback                  // 4. codeCallback-Funktion
+//         );
+//
+//         authflow.getMsaToken().catch((err) => {
+//             if (err) {
+//                 logger.error(`[prismarine-auth] Error triggering MSA token flow: ${err.message}`, { error: err });
+//                 reject(err);
+//             }
+//         });
+//     });
+// }
+
+
 
 // =========================================================================
 // HELFERFUNKTIONEN FÜR CACHE-MANAGEMENT
@@ -147,74 +179,73 @@ async function createBotInstance(accountId: string, loginEmail: string, authCach
 app.post('/api/accounts/initiate-add', keycloak.protect(), async (req: any, res) => {
     const { loginEmail } = req.body;
     const keycloakUserId = req.kauth.grant.access_token.content.sub;
-    logger.info(`[1/3] Received 'initiate-add' request for email: ${loginEmail}`);
+    logger.info(`[1/4] Received 'initiate-add' request for email: ${loginEmail}`);
 
     let account;
     try {
         account = await prisma.minecraftAccount.create({
             data: { loginEmail, keycloakUserId, status: 'PENDING_VERIFICATION', session: { create: {} } },
         });
+        logger.info(`[2/4] Created PENDING account in DB: ${account.accountId}`);
     } catch (e: any) {
-        if (e.code === 'P2002') return res.status(409).json({ error: 'An account with this email already exists.' });
+        if (e.code === 'P2002') {
+            logger.warn(`[WARN] Account already exists: ${loginEmail}`);
+            return res.status(409).json({ error: 'An account with this email already exists.' });
+        }
+        logger.error('[FATAL] Could not create PENDING account in DB.', { error: e });
         return res.status(500).json({ error: 'Database error.' });
     }
 
     const { accountId } = account;
-    logger.info(`[2/3] Created PENDING account: ${accountId}`);
 
-    // Wir erstellen den Bot und hängen den Listener sofort an.
-    const authBot = mineflayer.createBot({
-        username: loginEmail,
-        auth: 'microsoft',
-        skipValidation: true,
-        profilesFolder: msaFolderPath,
-        // WICHTIG: MUSS false sein, damit der Event ausgelöst wird.
-        hideErrors: false,
-    });
+    try {
+        const result = await new Promise<{ accountId: string, auth: { url: string, code: string } }>((resolve, reject) => {
 
-    let linkSent = false;
+            const onMsaCodeCallback = (data: { user_code: string, verification_uri: string, message: string }) => {
+                logger.info(`[3/4] Login data received via onMsaCode callback.`);
 
-    // Ein Timeout, um den PENDING Account zu löschen, falls der Link nie generiert wird.
-    const cleanupTimeout = setTimeout(() => {
-        if (!linkSent) {
-            logger.warn(`Link generation timed out for account ${accountId}. Cleaning up.`);
-            authBot.end();
-            prisma.minecraftAccount.delete({ where: { accountId, status: 'PENDING_VERIFICATION' } }).catch();
-        }
-    }, 30000); // 30 Sekunden
+                // KORREKTUR: Wir verwenden die strukturierten Daten direkt, anstatt zu parsen.
+                // data.verification_uri ist der Link
+                // data.user_code ist der Code
+                if (!data.verification_uri || !data.user_code) {
+                    return reject(new Error('Received incomplete authentication data from Microsoft.'));
+                }
 
-    // Wir lauschen NUR EINMAL auf den allerersten Fehler.
-    authBot.once('error', (err: any) => {
-        linkSent = true; // Verhindert, dass der Timeout abläuft.
-        clearTimeout(cleanupTimeout);
+                resolve({
+                    accountId: accountId,
+                    auth: {
+                        url: data.verification_uri,
+                        code: data.user_code
+                    }
+                });
+            };
 
-        // Der einzige Fall, der uns interessiert: Der Fehler enthält den Link.
-        if (err.message && err.message.includes('join the server')) {
-            logger.info(`[3/3] Login Link captured from 'error' event. Sending to frontend.`);
+            const bot = mineflayer.createBot({
+                username: loginEmail,
+                auth: 'microsoft',
+                skipValidation: true,
+                profilesFolder: msaFolderPath,
+                hideErrors: true,
+                onMsaCode: onMsaCodeCallback
+            });
 
-            // Sende die Antwort an das Frontend.
-            res.status(200).json({ accountId, prompt: err.message });
-        } else {
-            // Dies fängt z.B. einen ECONNREFUSED ab, falls er doch als erster kommt,
-            // oder einen anderen unerwarteten Fehler.
-            logger.error(`An unexpected error occurred during link generation: ${err.message}`);
-            res.status(500).json({ error: 'Failed to generate login link. Please try again.' });
-            prisma.minecraftAccount.delete({ where: { accountId, status: 'PENDING_VERIFICATION' } }).catch();
-        }
+            bot.once('login', () => reject(new Error('This account appears to be already linked.')));
+            setTimeout(() => reject(new Error('Authentication process timed out.')), 30000);
+        });
 
-        // Egal was passiert, der temporäre Bot hat seine Aufgabe erfüllt.
-        authBot.end();
-    });
+        logger.info(`[4/4] Successfully generated auth data. Sending to frontend.`);
+        res.status(200).json(result);
 
-    // Fallback für den Fall, dass bereits ein Cache existiert.
-    authBot.once('login', () => {
-        linkSent = true;
-        clearTimeout(cleanupTimeout);
-        logger.warn(`Auth-Bot for ${accountId} unexpectedly logged in (used existing cache).`);
-        res.status(409).json({ error: 'This account appears to be already linked.' });
-        prisma.minecraftAccount.delete({ where: { accountId, status: 'PENDING_VERIFICATION' } }).catch();
-        authBot.end();
-    });
+    } catch (error: any) {
+        logger.error(`[FATAL] Failed during link generation for ${loginEmail}. Cleaning up PENDING account.`, { error: error });
+
+        await prisma.minecraftAccount.delete({ where: { accountId } }).catch();
+
+        const errorMessage = error.message && error.message.includes('already linked')
+            ? error.message
+            : 'Failed to initiate the authentication process.';
+        return res.status(500).json({ error: errorMessage });
+    }
 });
 
 app.post('/api/accounts/finalize-add/:accountId', keycloak.protect(), async (req: any, res) => {

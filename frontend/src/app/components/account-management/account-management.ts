@@ -76,7 +76,8 @@ export class AccountManagement implements OnInit, OnDestroy {
       next: (response: InitiateAddResponse) => {
         this.isLoading = false;
         this.addAccountForm.reset();
-        this.openDeviceLoginDialog(response.prompt, response.accountId);
+        // Wir übergeben jetzt das saubere Datenobjekt
+        this.openDeviceLoginDialog(response.auth, response.accountId);
       },
       error: (err: HttpErrorResponse) => {
         this.showNotification(err.error?.error || 'An unknown error occurred.', true);
@@ -85,21 +86,16 @@ export class AccountManagement implements OnInit, OnDestroy {
     });
   }
 
-  openDeviceLoginDialog(prompt: string, accountId: string): void {
-    const urlRegex = /(https:\/\/www\.microsoft\.com\/link)/;
-    const codeRegex = /enter the code ([A-Z0-9]+)/;
-    const urlMatch = prompt.match(urlRegex);
-    const codeMatch = prompt.match(codeRegex);
-
-    if (urlMatch && codeMatch) {
-      this.dialog.open(DeviceLoginDialogComponent, {
-        width: '500px',
-        data: { url: urlMatch[1], code: codeMatch[1], accountId: accountId },
-        disableClose: true
-      });
-    } else {
-      this.showNotification('Could not parse login link from server.', true);
-    }
+  openDeviceLoginDialog(auth: { code: string, url: string }, accountId: string): void {
+    this.dialog.open(DeviceLoginDialogComponent, {
+      width: '500px',
+      data: {
+        url: auth.url,
+        code: auth.code,
+        accountId: accountId
+      },
+      disableClose: true
+    });
   }
 
   deleteAccount(accountId: string, accountName: string | null): void {

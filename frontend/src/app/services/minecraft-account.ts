@@ -15,7 +15,10 @@ export interface MinecraftAccount {
 
 export interface InitiateAddResponse {
   accountId: string;
-  prompt: string;
+  auth: {
+    code: string;
+    url: string;
+  };
 }
 
 @Injectable({ providedIn: 'root' })
