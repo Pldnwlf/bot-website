@@ -20,11 +20,8 @@
     </button>
   </div>
   <mat-progress-bar mode="indeterminate" class="waiting-bar"></mat-progress-bar>
-  <p class="waiting-text">Waiting for you to complete the login...</p>
+  <p class="waiting-text">Waiting for you to complete the login... This dialog will close automatically upon success.</p>
 </div>
 <div mat-dialog-actions align="end">
-  <button mat-stroked-button (click)="onClose()">Close</button>
-  <button mat-flat-button color="primary" (click)="onFinalize()" [disabled]="isFinalizing">
-  @if(isFinalizing) { Verifying... } @else { Complete Verification }
-  </button>
+  <button mat-stroked-button (click)="onClose()">Cancel</button>
 </div>

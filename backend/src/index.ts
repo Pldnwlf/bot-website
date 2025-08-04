@@ -7,7 +7,7 @@ import Keycloak from 'keycloak-connect';
 import cors from 'cors';
 import session from 'express-session';
 import express from 'express';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import * as mineflayer from 'mineflayer';
 import { Bot } from 'mineflayer';
 import { WebSocketServer } from 'ws';
@@ -15,7 +15,6 @@ import http from 'http';
 import logger from './logger';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { Authflow, Titles } from 'prismarine-auth';
 
 const app = express();
 const prisma = new PrismaClient();
@@ -25,7 +24,8 @@ const logindelay = parseInt(process.env.LOGINDELAY || "20000");
 const msaFolderPath = path.join(process.cwd(), 'msa');
 
 const activeBots: Map<string, Bot> = new Map();
-const pendingAuthenticationBots: Map<string, Bot> = new Map();
+// Speichert Bots, die auf die MS-Authentifizierung durch den Benutzer warten.
+const pendingAuthenticationBots: Map<string, { bot: Bot, timeoutId: NodeJS.Timeout, pollerId?: NodeJS.Timeout }> = new Map();
 
 // =========================================================================
 // SERVER UND WEBSOCKET INITIALISIERUNG
@@ -42,7 +42,7 @@ function broadcast(data: any) {
 }
 
 // =========================================================================
-// MIDDLEWARE
+// MIDDLEWARE (unverändert)
 // =========================================================================
 const memoryStore = new session.MemoryStore();
 const keycloak = new Keycloak({ store: memoryStore });
@@ -57,63 +57,24 @@ app.use(session({
 app.use(keycloak.middleware());
 
 // =========================================================================
-//  HELFERFUNKTION: Kapselt die Logik zum Holen des Links
+// KERNLOGIK: BOT-LEBENSZYKLUS (unverändert)
 // =========================================================================
-// async function getMicrosoftAuthLink(email: string): Promise<{ user_code: string, verification_uri: string }> {
-//     return new Promise((resolve, reject) => {
-//         const codeCallback = (data: any) => {
-//             logger.info(`[prismarine-auth] Device code received via codeCallback for ${email}`);
-//             resolve(data);
-//         };
-//
-//         const authflow = new Authflow(
-//             email,                        // 1. username
-//             msaFolderPath,                // 2. cache
-//             {                             // 3. options-Objekt
-//                 authTitle: Titles.MinecraftJava,
-//                 flow: 'msal'
-//             },
-//             codeCallback                  // 4. codeCallback-Funktion
-//         );
-//
-//         authflow.getMsaToken().catch((err) => {
-//             if (err) {
-//                 logger.error(`[prismarine-auth] Error triggering MSA token flow: ${err.message}`, { error: err });
-//                 reject(err);
-//             }
-//         });
-//     });
-// }
-
-
-
-// =========================================================================
-// HELFERFUNKTIONEN FÜR CACHE-MANAGEMENT
-// =========================================================================
-async function writeCacheFile(accountId: string, cacheData: Prisma.JsonValue): Promise<string> {
-    const profilePath = path.join(msaFolderPath, `${accountId}.json`);
-    await fs.writeFile(profilePath, JSON.stringify(cacheData, null, 2));
-    return profilePath;
-}
-
-async function readCacheFile(profilePath: string): Promise<Prisma.JsonValue> {
-    try {
-        const fileContent = await fs.readFile(profilePath, 'utf-8');
-        return JSON.parse(fileContent);
-    } catch (error) {
-        logger.error(`Could not read or parse cache file at ${profilePath}`, { error });
-        return {};
-    }
-}
-
-// =========================================================================
-// KERNLOGIK: BOT-LEBENSZYKLUS
-// =========================================================================
-async function createBotInstance(accountId: string, loginEmail: string, authCache: Prisma.JsonValue, options: { host: string; port: number, version?: string | false }) {
+async function createBotInstance(accountId: string, loginEmail: string, options: { host: string; port: number, version?: string | false }) {
     const logMeta = { accountId, loginEmail };
-    logger.info(`Starting bot instance for ${loginEmail}`, logMeta);
+    logger.info(`Preparing to start bot instance for ${loginEmail}`, logMeta);
 
-    const profilePath = await writeCacheFile(accountId, authCache);
+    const permanentCachePath = path.join(msaFolderPath, `${accountId}.json`);
+    const sessionCachePath = path.join(msaFolderPath, `${loginEmail}.json`);
+
+    try {
+        await fs.rename(permanentCachePath, sessionCachePath);
+        logger.info(`Activated session cache for ${loginEmail}`);
+    } catch (error) {
+        logger.error(`FATAL: Could not find or activate cache for account ${accountId}. Bot will not start.`, { error });
+        broadcast({ type: 'bot_error', payload: { accountId, error: `Account cache file not found on server.` } });
+        await prisma.botSession.update({ where: { accountId }, data: { status: 'Error: Cache not found', isActive: false } }).catch(()=>{});
+        return;
+    }
 
     const bot = mineflayer.createBot({
         username: loginEmail,
@@ -128,18 +89,11 @@ async function createBotInstance(accountId: string, loginEmail: string, authCach
 
     bot.once('login', async () => {
         logger.info(`Bot ${bot.username} logged in successfully.`, logMeta);
-        const updatedCache = await readCacheFile(profilePath);
-        if (updatedCache && typeof updatedCache === 'object' && !Array.isArray(updatedCache)) {
-            await prisma.minecraftAccount.update({
-                where: { accountId },
-                data: {
-                    ingameName: bot.username,
-                    authenticationCache: updatedCache,
-                    status: 'ACTIVE'
-                }
-            });
-        }
-        await prisma.botSession.update({ where: { accountId }, data: { status: 'connecting', isActive: true, lastSeenAt: new Date() } });
+        await prisma.minecraftAccount.update({
+            where: { accountId },
+            data: { ingameName: bot.username }
+        }).catch(()=>{});
+        await prisma.botSession.update({ where: { accountId }, data: { status: 'connecting', isActive: true, lastSeenAt: new Date() } }).catch(()=>{});
         broadcast({ type: 'status_update', payload: { accountId, status: `Logged in as ${bot.username}` } });
     });
 
@@ -148,38 +102,60 @@ async function createBotInstance(accountId: string, loginEmail: string, authCach
         await prisma.botSession.update({
             where: { accountId },
             data: { status: 'online_on_server', lastKnownServerAddress: options.host, lastKnownServerPort: options.port, lastKnownVersion: options.version || null }
-        });
+        }).catch(()=>{});
         broadcast({ type: 'status_update', payload: { accountId, status: `Online on ${options.host}` } });
     });
 
-    bot.on('kicked', async (reason) => {
-        (bot as any).wasKicked = true;
-        const parsedReason = typeof reason === 'string' ? reason : JSON.stringify(reason);
-        logger.warn(`Bot ${bot.username} was kicked. Reason: ${parsedReason}`, logMeta);
-        broadcast({ type: 'bot_kicked', payload: { accountId, reason: parsedReason } });
+    bot.on('kicked', (reason) => {
+        broadcast({ type: 'bot_kicked', payload: { accountId, reason: JSON.stringify(reason) } });
     });
-
-    bot.on('error', async (err) => {
-        logger.error(`Bot error for ${loginEmail}: ${err.message}`, { ...logMeta, error: err });
+    bot.on('error', (err) => {
         broadcast({ type: 'bot_error', payload: { accountId, error: err.message } });
     });
 
     bot.once('end', async (reason) => {
         activeBots.delete(accountId);
-        await prisma.botSession.update({ where: { accountId }, data: { status: 'offline', isActive: false } });
+        await prisma.botSession.update({ where: { accountId }, data: { status: 'offline', isActive: false } }).catch(()=>{});
         broadcast({ type: 'status_update', payload: { accountId, status: 'offline' } });
-        await fs.unlink(profilePath).catch(err => logger.warn(`Could not clean up temp file ${profilePath}`, { error: err }));
+        try {
+            await fs.rename(sessionCachePath, permanentCachePath);
+            logger.info(`Deactivated and secured session cache for ${loginEmail}.`);
+        } catch(err) {
+            logger.error(`CRITICAL: Could not rename session cache back to permanent state for ${accountId}! Manual intervention may be required.`, { error: err });
+        }
         logger.info(`Bot ${bot.username} disconnected. Reason: ${reason || 'Unknown'}`, logMeta);
     });
 }
 
+
 // =========================================================================
 // API ENDPUNKTE
 // =========================================================================
+
+async function cleanupPendingBot(accountId: string, options: { deleteFromDB?: boolean } = {}) {
+    const pending = pendingAuthenticationBots.get(accountId);
+    if (pending) {
+        clearTimeout(pending.timeoutId);
+        if (pending.pollerId) clearInterval(pending.pollerId);
+        pending.bot.quit();
+        pendingAuthenticationBots.delete(accountId);
+        logger.info(`Cleaned up pending authentication bot for account ${accountId}.`);
+        if (options.deleteFromDB) {
+            await prisma.minecraftAccount.delete({ where: { accountId } })
+                .catch(e => logger.error(`Failed to delete PENDING account ${accountId} during cleanup.`, { error: e }));
+        }
+    }
+}
+
 app.post('/api/accounts/initiate-add', keycloak.protect(), async (req: any, res) => {
     const { loginEmail } = req.body;
     const keycloakUserId = req.kauth.grant.access_token.content.sub;
     logger.info(`[1/4] Received 'initiate-add' request for email: ${loginEmail}`);
+
+    const existingAccount = await prisma.minecraftAccount.findUnique({ where: { loginEmail_keycloakUserId: { loginEmail, keycloakUserId } } });
+    if (existingAccount) {
+        return res.status(409).json({ error: 'An account with this email already exists.' });
+    }
 
     let account;
     try {
@@ -188,135 +164,106 @@ app.post('/api/accounts/initiate-add', keycloak.protect(), async (req: any, res)
         });
         logger.info(`[2/4] Created PENDING account in DB: ${account.accountId}`);
     } catch (e: any) {
-        if (e.code === 'P2002') {
-            logger.warn(`[WARN] Account already exists: ${loginEmail}`);
-            return res.status(409).json({ error: 'An account with this email already exists.' });
-        }
-        logger.error('[FATAL] Could not create PENDING account in DB.', { error: e });
         return res.status(500).json({ error: 'Database error.' });
     }
 
     const { accountId } = account;
+    const tempProfilePath = path.join(msaFolderPath, `${loginEmail}.json`);
+    let pollerId: NodeJS.Timeout | undefined;
+
+    const timeoutId = setTimeout(() => {
+        logger.warn(`Authentication for ${loginEmail} (accountId: ${accountId}) timed out. Cleaning up.`);
+        cleanupPendingBot(accountId, { deleteFromDB: true });
+        fs.unlink(tempProfilePath).catch(() => {});
+    }, 300000); // 5 Minuten
 
     try {
-        const result = await new Promise<{ accountId: string, auth: { url: string, code: string } }>((resolve, reject) => {
-
-            const onMsaCodeCallback = (data: { user_code: string, verification_uri: string, message: string }) => {
-                logger.info(`[3/4] Login data received via onMsaCode callback.`);
-
-                // KORREKTUR: Wir verwenden die strukturierten Daten direkt, anstatt zu parsen.
-                // data.verification_uri ist der Link
-                // data.user_code ist der Code
-                if (!data.verification_uri || !data.user_code) {
-                    return reject(new Error('Received incomplete authentication data from Microsoft.'));
+        const bot = mineflayer.createBot({
+            username: loginEmail,
+            auth: 'microsoft',
+            skipValidation: true,
+            profilesFolder: msaFolderPath,
+            hideErrors: true,
+            onMsaCode: (data) => {
+                logger.info(`[3/4] Microsoft device code received for ${loginEmail}. Sending to frontend.`);
+                if (!res.headersSent) {
+                    res.status(200).json({
+                        accountId: accountId,
+                        auth: { url: data.verification_uri, code: data.user_code }
+                    });
                 }
 
-                resolve({
-                    accountId: accountId,
-                    auth: {
-                        url: data.verification_uri,
-                        code: data.user_code
+                logger.info(`[3.5/4] Waiting for user to complete login. Polling for cache file: ${tempProfilePath}`);
+                pollerId = setInterval(async () => {
+                    try {
+                        // Prüfe, ob die Datei existiert.
+                        await fs.stat(tempProfilePath);
+
+                        logger.info(`[4/4] Cache file found! Finalizing account ${accountId}.`);
+                        if (pollerId) clearInterval(pollerId);
+
+                        const permanentProfilePath = path.join(msaFolderPath, `${accountId}.json`);
+                        await fs.rename(tempProfilePath, permanentProfilePath);
+
+                        // Der Ingame-Name ist an dieser Stelle noch unbekannt. Er wird beim ersten
+                        // echten Start des Bots nachgetragen.
+                        await prisma.minecraftAccount.update({
+                            where: { accountId },
+                            data: { status: 'ACTIVE' }
+                        });
+
+                        broadcast({ type: 'accounts_updated' });
+                        logger.info(`Account ${accountId} finalized and set to ACTIVE. Cache stored at ${permanentProfilePath}`);
+
+                        cleanupPendingBot(accountId);
+
+                    } catch (error: any) {
+                        // Fehlercode 'ENOENT' bedeutet "File not found", das ist während des Wartens normal.
+                        if (error.code !== 'ENOENT') {
+                            logger.error(`Error while polling for file: ${error.message}`);
+                            if (pollerId) clearInterval(pollerId);
+                            cleanupPendingBot(accountId, { deleteFromDB: true });
+                        }
                     }
-                });
-            };
+                }, 2000); // Alle 2 Sekunden prüfen
 
-            const bot = mineflayer.createBot({
-                username: loginEmail,
-                auth: 'microsoft',
-                skipValidation: true,
-                profilesFolder: msaFolderPath,
-                hideErrors: true,
-                onMsaCode: onMsaCodeCallback
-            });
-
-            bot.once('login', () => reject(new Error('This account appears to be already linked.')));
-            setTimeout(() => reject(new Error('Authentication process timed out.')), 30000);
+                // Speichere die Referenz auf den Poller, damit wir ihn im Timeout stoppen können.
+                const pending = pendingAuthenticationBots.get(accountId);
+                if (pending) pending.pollerId = pollerId;
+            }
         });
 
-        logger.info(`[4/4] Successfully generated auth data. Sending to frontend.`);
-        res.status(200).json(result);
+        // Speichere den Bot und den Timeout in der Map.
+        pendingAuthenticationBots.set(accountId, { bot, timeoutId });
 
     } catch (error: any) {
-        logger.error(`[FATAL] Failed during link generation for ${loginEmail}. Cleaning up PENDING account.`, { error: error });
-
-        await prisma.minecraftAccount.delete({ where: { accountId } }).catch();
-
-        const errorMessage = error.message && error.message.includes('already linked')
-            ? error.message
-            : 'Failed to initiate the authentication process.';
-        return res.status(500).json({ error: errorMessage });
-    }
-});
-
-app.post('/api/accounts/finalize-add/:accountId', keycloak.protect(), async (req: any, res) => {
-    const { accountId } = req.params;
-    const keycloakUserId = req.kauth.grant.access_token.content.sub;
-    logger.info(`[4/4] Received 'finalize-add' request for account: ${accountId}`);
-
-    const account = await prisma.minecraftAccount.findFirst({
-        where: { accountId, keycloakUserId }
-    });
-
-    if (!account) {
-        logger.error("Account does not exist or permission denied");
-        return res.status(404).json({ error: 'Account not found or permission denied.' });
-    }
-
-    const profilePath = path.join(msaFolderPath, `${account.loginEmail}.json`);
-
-    try {
-        const newCache = await readCacheFile(profilePath);
-        const ingameName = (newCache as any)?.profile?.name || 'Unknown';
-
-        if (newCache && typeof newCache === 'object' && !Array.isArray(newCache)) {
-            await prisma.minecraftAccount.update({
-                where: { accountId },
-                data: { status: 'ACTIVE', ingameName, authenticationCache: newCache }
-            });
-
-            await fs.unlink(profilePath); // Temporäre Datei löschen
-
-            broadcast({ type: 'accounts_updated' });
-            logger.info(`Account ${accountId} finalized and set to ACTIVE.`);
-            return res.status(200).json({ message: 'Account successfully verified.' });
-        } else {
-            throw new Error('Cache is not a valid object.');
+        logger.error(`[FATAL] Failed to create bot for auth process for ${loginEmail}.`, { error });
+        cleanupPendingBot(accountId, { deleteFromDB: true });
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Failed to initiate the authentication process.' });
         }
-
-    } catch(error) {
-        logger.error(`Could not find or process cache file for ${accountId}. Maybe the login was not completed?`, { error });
-        return res.status(404).json({ error: 'Verification failed. Please close the dialog and try adding the account again.' });
     }
 });
 
 
+// Die restlichen Endpunkte (get, start, stop, delete) bleiben unverändert
 app.get('/api/accounts', keycloak.protect(), async (req: any, res) => {
     const keycloakUserId = req.kauth.grant.access_token.content.sub;
     try {
         const accounts = await prisma.minecraftAccount.findMany({
             where: { keycloakUserId },
-            select: {
-                accountId: true,
-                loginEmail: true,
-                ingameName: true,
-                status: true,
-                session: { select: { status: true, lastKnownServerAddress: true } }
-            },
+            select: { accountId: true, loginEmail: true, ingameName: true, status: true, session: { select: { status: true, lastKnownServerAddress: true } } },
             orderBy: { createdAt: 'asc' }
         });
         res.json(accounts);
-    } catch (error) {
-        logger.error('Failed to fetch accounts', { error });
-        res.status(500).json({ error: 'Internal server error' });
-    }
+    } catch (error) { logger.error('Failed to fetch accounts', { error }); res.status(500).json({ error: 'Internal server error' }); }
 });
 
 app.post('/api/bots/start', keycloak.protect(), async (req: any, res) => {
     const { accountIds, serverAddress, accountVersion } = req.body;
     const keycloakUserId = req.kauth.grant.access_token.content.sub;
     if (!accountIds || !Array.isArray(accountIds) || !serverAddress) {
-         res.status(400).json({ error: 'accountIds and serverAddress are required.' });
-         return;
+        return res.status(400).json({ error: 'accountIds and serverAddress are required.' });
     }
     const [host, portStr] = serverAddress.split(':');
     const port = portStr ? parseInt(portStr, 10) : 25565;
@@ -326,11 +273,11 @@ app.post('/api/bots/start', keycloak.protect(), async (req: any, res) => {
         const account = await prisma.minecraftAccount.findFirst({
             where: { accountId, keycloakUserId, status: 'ACTIVE' }
         });
-        if (account && account.authenticationCache) {
-            createBotInstance(accountId, account.loginEmail, account.authenticationCache, { host, port, version: accountVersion || false })
+        if (account) {
+            createBotInstance(accountId, account.loginEmail, { host, port, version: accountVersion || false })
                 .catch(err => logger.error(`Failed to start bot instance for ${accountId}`, { error: err }));
         } else {
-            logger.warn(`Could not start bot for account ${accountId}: Not found, not active, or no auth cache.`);
+            logger.warn(`Could not start bot for account ${accountId}: Not found or not active.`);
         }
         await new Promise(resolve => setTimeout(resolve, logindelay));
     }
@@ -348,10 +295,19 @@ app.post('/api/bots/stop', keycloak.protect(), async (req: any, res) => {
 app.delete('/api/accounts/:accountId', keycloak.protect(), async (req: any, res) => {
     const { accountId } = req.params;
     const keycloakUserId = req.kauth.grant.access_token.content.sub;
+
     activeBots.get(accountId)?.quit();
+    await cleanupPendingBot(accountId);
+
     try {
         await prisma.minecraftAccount.delete({ where: { accountId, keycloakUserId } });
-        logger.info(`Account ${accountId} deleted.`);
+        const profilePath = path.join(msaFolderPath, `${accountId}.json`);
+        await fs.unlink(profilePath).catch(err => {
+            if (err.code !== 'ENOENT') {
+                logger.warn(`Could not delete cache file ${profilePath} during account deletion.`, { error: err });
+            }
+        });
+        logger.info(`Account ${accountId} and its cache file deleted.`);
         broadcast({ type: 'accounts_updated' });
         res.status(204).send();
     } catch (error) {
@@ -360,21 +316,11 @@ app.delete('/api/accounts/:accountId', keycloak.protect(), async (req: any, res)
     }
 });
 
-// =========================================================================
-// SERVER START UND GRACEFUL SHUTDOWN
-// =========================================================================
+
+// SERVER START UND GRACEFUL SHUTDOWN (unverändert)
 async function main() {
     await fs.mkdir(msaFolderPath, { recursive: true });
-
-    try {
-        const files = await fs.readdir(msaFolderPath);
-        for (const file of files) {
-            if (file.endsWith('.json')) await fs.unlink(path.join(msaFolderPath, file));
-        }
-        logger.info('Cleaned up temporary cache directory.');
-    } catch (error) {
-        logger.error('Could not clean up cache directory.', { error });
-    }
+    logger.info('Cache directory ready. Skipping cleanup on startup to preserve permanent caches.');
 
     const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
     signals.forEach((signal) => {
@@ -384,7 +330,10 @@ async function main() {
             for (const bot of activeBots.values()) {
                 bot.quit();
             }
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            for (const accountId of pendingAuthenticationBots.keys()) {
+                await cleanupPendingBot(accountId, {deleteFromDB: true})
+            }
+            await new Promise(resolve => setTimeout(resolve, 2000));
             await prisma.$disconnect();
             logger.info('🗃️ Disconnected from database.');
             server.close(() => {

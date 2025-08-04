@@ -7,8 +7,7 @@ import { ClipboardModule, Clipboard } from '@angular/cdk/clipboard';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { MinecraftAccountService } from '../../services/minecraft-account';
-
+// Der MinecraftAccountService wird hier nicht mehr benötigt.
 
 export interface DeviceLoginData {
   url: string;
@@ -34,31 +33,21 @@ export interface DeviceLoginData {
 })
 export class DeviceLoginDialogComponent {
   public data: DeviceLoginData;
-  isFinalizing = false;
+  // isFinalizing wird nicht mehr benötigt
+  // isFinalizing = false;
 
   constructor(
     public dialogRef: MatDialogRef<DeviceLoginDialogComponent>,
     @Inject(MAT_DIALOG_DATA) data: DeviceLoginData,
     private clipboard: Clipboard,
-    private snackBar: MatSnackBar,
-    private accountService: MinecraftAccountService
-) {
+    private snackBar: MatSnackBar
+    // MinecraftAccountService wird hier nicht mehr injiziert
+  ) {
     this.data = data;
   }
 
-  onFinalize(): void {
-    this.isFinalizing = true;
-    this.accountService.finalizeAddAccount(this.data.accountId).subscribe({
-      next: () => {
-        this.snackBar.open('Verification successful!', 'OK', { duration: 3000 });
-      },
-      error: (err) => {
-        this.snackBar.open(err.error?.error || 'Verification failed.', 'Close', { duration: 5000, panelClass: ['error-snackbar'] });
-        this.isFinalizing = false;
-      }
-    });
-  }
-
+  // Die onFinalize-Methode wird vollständig entfernt.
+  // onFinalize(): void { ... }
 
   copyCode(): void {
     this.clipboard.copy(this.data.code);
@@ -68,6 +57,8 @@ export class DeviceLoginDialogComponent {
   }
 
   onClose(): void {
+    // Wenn der Benutzer den Dialog schliesst, bricht er den Vorgang ab.
+    // Das Backend wird den PENDING-Account nach einem Timeout selbst aufräumen.
     this.dialogRef.close();
   }
 }

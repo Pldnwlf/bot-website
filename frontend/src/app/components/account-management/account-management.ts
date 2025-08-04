@@ -16,7 +16,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { MinecraftAccount, MinecraftAccountService, InitiateAddResponse } from '../../services/minecraft-account';
 import { WebsocketService, WebSocketMessage } from '../../services/websocket';
-import { DeviceLoginDialogComponent, DeviceLoginData } from '../device-login-dialog/device-login-dialog';
+import { DeviceLoginDialogComponent } from '../device-login-dialog/device-login-dialog';
 
 @Component({
   selector: 'app-account-management',
@@ -46,10 +46,15 @@ export class AccountManagement implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadAccounts();
+    // Der WebSocket-Listener bleibt bestehen. Wenn die Authentifizierung schnell genug ist,
+    // schliesst er den Dialog und zeigt eine Erfolgsmeldung an.
     this.wsSubscription = this.websocketService.onMessage().subscribe((msg: WebSocketMessage) => {
       if (msg.type === 'accounts_updated') {
-        this.dialog.closeAll();
-        this.showNotification('Account successfully verified and added!');
+        // Überprüfen, ob noch Dialoge offen sind, bevor eine neue Benachrichtigung angezeigt wird
+        if(this.dialog.openDialogs.length > 0) {
+          this.dialog.closeAll();
+          this.showNotification('Account successfully verified and added!');
+        }
         this.loadAccounts();
       }
     });
@@ -76,25 +81,39 @@ export class AccountManagement implements OnInit, OnDestroy {
       next: (response: InitiateAddResponse) => {
         this.isLoading = false;
         this.addAccountForm.reset();
-        // Wir übergeben jetzt das saubere Datenobjekt
-        this.openDeviceLoginDialog(response.auth, response.accountId);
+
+        // ÖFFNE DEN DIALOG
+        const dialogRef = this.dialog.open(DeviceLoginDialogComponent, {
+          width: '500px',
+          data: {
+            url: response.auth.url,
+            code: response.auth.code,
+            accountId: response.accountId
+          },
+          disableClose: true
+        });
+
+        // =================================================================
+        // NEUE, ZEITBASIERTE LOGIK
+        // =================================================================
+        // Setze einen Timer, der den Dialog nach 20 Sekunden schliesst.
+        setTimeout(() => {
+          // Nur schliessen, wenn er noch offen ist
+          if (dialogRef.getState() === 0 /* OPEN */) {
+            dialogRef.close();
+            this.showNotification('Checking for account status update...');
+
+            // Nach einer weiteren kurzen Verzögerung die Liste neu laden,
+            // um zu sehen, ob der Account in der Zwischenzeit hinzugefügt wurde.
+            setTimeout(() => this.loadAccounts(), 1500);
+          }
+        }, 20000); // 20 Sekunden
+
       },
       error: (err: HttpErrorResponse) => {
         this.showNotification(err.error?.error || 'An unknown error occurred.', true);
         this.isLoading = false;
       }
-    });
-  }
-
-  openDeviceLoginDialog(auth: { code: string, url: string }, accountId: string): void {
-    this.dialog.open(DeviceLoginDialogComponent, {
-      width: '500px',
-      data: {
-        url: auth.url,
-        code: auth.code,
-        accountId: accountId
-      },
-      disableClose: true
     });
   }
 

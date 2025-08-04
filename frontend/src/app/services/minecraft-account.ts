@@ -46,7 +46,4 @@ export class MinecraftAccountService {
   removeAccount(accountId: string): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/accounts/${accountId}`);
   }
-  finalizeAddAccount(accountId: string): Observable<any> {
-    return this.http.post(`${this.apiUrl}/accounts/finalize-add/${accountId}`, {});
-  }
 }

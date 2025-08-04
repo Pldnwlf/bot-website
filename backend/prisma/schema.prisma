@@ -19,17 +19,17 @@ enum AccountStatus {
 model MinecraftAccount {
   accountId             String        @id @default(uuid())
   keycloakUserId        String
-  loginEmail            String        @unique
+  loginEmail            String
   ingameName            String?
   status                AccountStatus @default(PENDING_VERIFICATION)
-  authenticationCache   Json?
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
 
   session BotSession?
 
+  @@unique([loginEmail, keycloakUserId])
   @@index([keycloakUserId])
-}
+  }
 
 model BotSession {
   sessionId              String   @id @default(uuid())
