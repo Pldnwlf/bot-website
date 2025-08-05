@@ -20,7 +20,7 @@ import { readdir, mkdir, rename, readFile } from "node:fs/promises";
 const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3000;
-const logindelay = parseInt(process.env.LOGINDELAY || "20000");
+const logindelay = parseInt(process.env.LOGINDELAY || "2000");
 
 const msaCachePath = path.join(process.cwd(), 'msa');
 
@@ -75,7 +75,7 @@ async function allFilesHaveDataInMsaFolder(): Promise<boolean> {
                 const data = await readFile(sourcePath, 'utf8');
                 if (data.trim().length <= 5) {
                     logger.warn(`File ${file.name} is empty or invalid.`);
-                    return false; // Mindestens eine Datei ist leer → Abbruch
+                    return false;
                 }
             } catch (err) {
                 logger.error(`Error while reading File: ${file.name}:`, err);
@@ -102,7 +102,7 @@ async function moveCacheToStorage(): Promise<void> {
 
     try {
         await mkdir(targetFolder, { recursive: true });
-        logger.info(`Ordner erstellt: ${targetFolder}`);
+        logger.info(`Created Directory: ${targetFolder}`);
 
         const entries = await readdir(baseFolder, { withFileTypes: true });
 
@@ -113,14 +113,14 @@ async function moveCacheToStorage(): Promise<void> {
 
                 try {
                     await rename(sourcePath, targetPath);
-                    logger.info(`Verschoben: ${entry.name}`);
+                    logger.info(`Moved: ${entry.name}`);
                 } catch (renameErr) {
-                    logger.error(`Fehler beim Verschieben von ${entry.name}:`, renameErr);
+                    logger.error(`Error while moving ${entry.name}:`, renameErr);
                 }
             }
         }
     } catch (err) {
-        logger.error('Fehler beim Lesen des msa-Ordners:', err);
+        logger.error('Error while reading MsaFolder:', err);
     }
 }
 
