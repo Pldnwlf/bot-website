@@ -15,13 +15,16 @@ import http from 'http';
 import logger from './logger';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { readdir, mkdir, rename, readFile } from "node:fs/promises";
 
 const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3000;
 const logindelay = parseInt(process.env.LOGINDELAY || "20000");
 
-const msaFolderPath = path.join(process.cwd(), 'msa');
+const msaCachePath = path.join(process.cwd(), 'msa');
+
+const msaProfilesPath = path.join(process.cwd(), 'msa/profiles');
 
 const activeBots: Map<string, Bot> = new Map();
 // Speichert Bots, die auf die MS-Authentifizierung durch den Benutzer warten.
@@ -57,32 +60,85 @@ app.use(session({
 app.use(keycloak.middleware());
 
 // =========================================================================
+// HELFERFUNKTIONEN
+// =========================================================================
+
+async function allFilesHaveDataInMsaFolder(): Promise<boolean> {
+    const folderPath = path.join(process.cwd(), 'msa');
+    try {
+        const entries = await readdir(folderPath, { withFileTypes: true });
+        const files = entries.filter(entry => entry.isFile());
+
+        for (const file of files) {
+            const sourcePath = path.join(folderPath, file.name);
+            try {
+                const data = await readFile(sourcePath, 'utf8');
+                if (data.trim().length <= 5) {
+                    logger.warn(`File ${file.name} is empty or invalid.`);
+                    return false; // Mindestens eine Datei ist leer → Abbruch
+                }
+            } catch (err) {
+                logger.error(`Error while reading File: ${file.name}:`, err);
+                return false;
+            }
+        }
+        logger.info(`All files have invalid data.`);
+        return true;
+    } catch (err) {
+        logger.error(`error while reading folder: ${folderPath}:`, err);
+        return false;
+    }
+}
+
+async function moveCacheToStorage(): Promise<void> {
+    const baseFolder = path.join(process.cwd(), 'msa');
+    const targetFolder = path.join(baseFolder, 'profiles');
+
+    const allValid = await allFilesHaveDataInMsaFolder();
+    if (!allValid) {
+        logger.warn("Not all files have data. Stop Procedure");
+        return;
+    }
+
+    try {
+        await mkdir(targetFolder, { recursive: true });
+        logger.info(`Ordner erstellt: ${targetFolder}`);
+
+        const entries = await readdir(baseFolder, { withFileTypes: true });
+
+        for (const entry of entries) {
+            if (entry.isFile()) {
+                const sourcePath = path.join(baseFolder, entry.name);
+                const targetPath = path.join(targetFolder, entry.name);
+
+                try {
+                    await rename(sourcePath, targetPath);
+                    logger.info(`Verschoben: ${entry.name}`);
+                } catch (renameErr) {
+                    logger.error(`Fehler beim Verschieben von ${entry.name}:`, renameErr);
+                }
+            }
+        }
+    } catch (err) {
+        logger.error('Fehler beim Lesen des msa-Ordners:', err);
+    }
+}
+
+// =========================================================================
 // KERNLOGIK: BOT-LEBENSZYKLUS (unverändert)
 // =========================================================================
 async function createBotInstance(accountId: string, loginEmail: string, options: { host: string; port: number, version?: string | false }) {
     const logMeta = { accountId, loginEmail };
     logger.info(`Preparing to start bot instance for ${loginEmail}`, logMeta);
 
-    const permanentCachePath = path.join(msaFolderPath, `${accountId}.json`);
-    const sessionCachePath = path.join(msaFolderPath, `${loginEmail}.json`);
-
-    try {
-        await fs.rename(permanentCachePath, sessionCachePath);
-        logger.info(`Activated session cache for ${loginEmail}`);
-    } catch (error) {
-        logger.error(`FATAL: Could not find or activate cache for account ${accountId}. Bot will not start.`, { error });
-        broadcast({ type: 'bot_error', payload: { accountId, error: `Account cache file not found on server.` } });
-        await prisma.botSession.update({ where: { accountId }, data: { status: 'Error: Cache not found', isActive: false } }).catch(()=>{});
-        return;
-    }
 
     const bot = mineflayer.createBot({
         username: loginEmail,
         auth: 'microsoft',
-        version: options.version || "1.21",
+        version: options.version || "1.21.4",
         host: options.host,
         port: options.port,
-        profilesFolder: msaFolderPath,
+        profilesFolder: msaProfilesPath,
         hideErrors: false
     });
     activeBots.set(accountId, bot);
@@ -117,12 +173,6 @@ async function createBotInstance(accountId: string, loginEmail: string, options:
         activeBots.delete(accountId);
         await prisma.botSession.update({ where: { accountId }, data: { status: 'offline', isActive: false } }).catch(()=>{});
         broadcast({ type: 'status_update', payload: { accountId, status: 'offline' } });
-        try {
-            await fs.rename(sessionCachePath, permanentCachePath);
-            logger.info(`Deactivated and secured session cache for ${loginEmail}.`);
-        } catch(err) {
-            logger.error(`CRITICAL: Could not rename session cache back to permanent state for ${accountId}! Manual intervention may be required.`, { error: err });
-        }
         logger.info(`Bot ${bot.username} disconnected. Reason: ${reason || 'Unknown'}`, logMeta);
     });
 }
@@ -136,8 +186,15 @@ async function cleanupPendingBot(accountId: string, options: { deleteFromDB?: bo
     const pending = pendingAuthenticationBots.get(accountId);
     if (pending) {
         clearTimeout(pending.timeoutId);
-        if (pending.pollerId) clearInterval(pending.pollerId);
-        pending.bot.quit();
+        if (pending.pollerId) {
+            clearInterval(pending.pollerId);
+        }
+
+        // PRÜFEN, ob die quit-Methode existiert, bevor sie aufgerufen wird
+        if (pending.bot && typeof pending.bot.quit === 'function') {
+            pending.bot.quit();
+        }
+
         pendingAuthenticationBots.delete(accountId);
         logger.info(`Cleaned up pending authentication bot for account ${accountId}.`);
         if (options.deleteFromDB) {
@@ -168,21 +225,19 @@ app.post('/api/accounts/initiate-add', keycloak.protect(), async (req: any, res)
     }
 
     const { accountId } = account;
-    const tempProfilePath = path.join(msaFolderPath, `${loginEmail}.json`);
     let pollerId: NodeJS.Timeout | undefined;
 
     const timeoutId = setTimeout(() => {
         logger.warn(`Authentication for ${loginEmail} (accountId: ${accountId}) timed out. Cleaning up.`);
         cleanupPendingBot(accountId, { deleteFromDB: true });
-        fs.unlink(tempProfilePath).catch(() => {});
-    }, 300000); // 5 Minuten
+    }, 300000);
 
     try {
         const bot = mineflayer.createBot({
             username: loginEmail,
             auth: 'microsoft',
             skipValidation: true,
-            profilesFolder: msaFolderPath,
+            profilesFolder: msaCachePath,
             hideErrors: true,
             onMsaCode: (data) => {
                 logger.info(`[3/4] Microsoft device code received for ${loginEmail}. Sending to frontend.`);
@@ -193,41 +248,24 @@ app.post('/api/accounts/initiate-add', keycloak.protect(), async (req: any, res)
                     });
                 }
 
-                logger.info(`[3.5/4] Waiting for user to complete login. Polling for cache file: ${tempProfilePath}`);
+                logger.info(`[3.5/4] Waiting for user to complete login. Polling for cache file: ${msaCachePath}`);
                 pollerId = setInterval(async () => {
-                    try {
-                        // Prüfe, ob die Datei existiert.
-                        await fs.stat(tempProfilePath);
-
-                        logger.info(`[4/4] Cache file found! Finalizing account ${accountId}.`);
+                    if (await allFilesHaveDataInMsaFolder()){
+                        logger.info(`[4/4] Cache files found! Finalizing account ${accountId}.`);
                         if (pollerId) clearInterval(pollerId);
-
-                        const permanentProfilePath = path.join(msaFolderPath, `${accountId}.json`);
-                        await fs.rename(tempProfilePath, permanentProfilePath);
-
-                        // Der Ingame-Name ist an dieser Stelle noch unbekannt. Er wird beim ersten
-                        // echten Start des Bots nachgetragen.
                         await prisma.minecraftAccount.update({
                             where: { accountId },
                             data: { status: 'ACTIVE' }
                         });
+                        await moveCacheToStorage()
 
                         broadcast({ type: 'accounts_updated' });
-                        logger.info(`Account ${accountId} finalized and set to ACTIVE. Cache stored at ${permanentProfilePath}`);
+                        logger.info(`Account ${accountId} finalized and set to ACTIVE. Cache moved to ${msaProfilesPath}`);
 
                         cleanupPendingBot(accountId);
-
-                    } catch (error: any) {
-                        // Fehlercode 'ENOENT' bedeutet "File not found", das ist während des Wartens normal.
-                        if (error.code !== 'ENOENT') {
-                            logger.error(`Error while polling for file: ${error.message}`);
-                            if (pollerId) clearInterval(pollerId);
-                            cleanupPendingBot(accountId, { deleteFromDB: true });
-                        }
                     }
-                }, 2000); // Alle 2 Sekunden prüfen
 
-                // Speichere die Referenz auf den Poller, damit wir ihn im Timeout stoppen können.
+                }, 5000);
                 const pending = pendingAuthenticationBots.get(accountId);
                 if (pending) pending.pollerId = pollerId;
             }
@@ -245,8 +283,6 @@ app.post('/api/accounts/initiate-add', keycloak.protect(), async (req: any, res)
     }
 });
 
-
-// Die restlichen Endpunkte (get, start, stop, delete) bleiben unverändert
 app.get('/api/accounts', keycloak.protect(), async (req: any, res) => {
     const keycloakUserId = req.kauth.grant.access_token.content.sub;
     try {
@@ -301,13 +337,8 @@ app.delete('/api/accounts/:accountId', keycloak.protect(), async (req: any, res)
 
     try {
         await prisma.minecraftAccount.delete({ where: { accountId, keycloakUserId } });
-        const profilePath = path.join(msaFolderPath, `${accountId}.json`);
-        await fs.unlink(profilePath).catch(err => {
-            if (err.code !== 'ENOENT') {
-                logger.warn(`Could not delete cache file ${profilePath} during account deletion.`, { error: err });
-            }
-        });
         logger.info(`Account ${accountId} and its cache file deleted.`);
+        //TODO - Nimm das neue Cachefile und speicehre die vordere ID in die db mit dem account damit du nachher die gespeicehrten Cache files löschen kansnt.
         broadcast({ type: 'accounts_updated' });
         res.status(204).send();
     } catch (error) {
@@ -317,9 +348,10 @@ app.delete('/api/accounts/:accountId', keycloak.protect(), async (req: any, res)
 });
 
 
-// SERVER START UND GRACEFUL SHUTDOWN (unverändert)
+// SERVER START UND GRACEFUL SHUTDOWN
 async function main() {
-    await fs.mkdir(msaFolderPath, { recursive: true });
+    await fs.mkdir(msaCachePath, { recursive: true });
+    await fs.mkdir(msaProfilesPath, { recursive: true });
     logger.info('Cache directory ready. Skipping cleanup on startup to preserve permanent caches.');
 
     const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
