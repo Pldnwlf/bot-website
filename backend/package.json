@@ -29,11 +29,15 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
+    "@prisma/client": "^6.10.1",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "express-session": "^1.18.1",
     "keycloak-connect": "^26.1.1",
     "mineflayer": "^4.29.0",
     "multer": "^2.0.1",
+    "pg": "^8.16.2",
     "prismarine-auth": "^2.7.0",
     "winston": "^3.17.0",
     "ws": "^8.18.2"
