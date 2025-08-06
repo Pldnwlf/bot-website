@@ -37,7 +37,7 @@ services:
       KC_DB_PASSWORD: ${DB_PASSWORD}
       KC_DB_SCHEMA: public
 
-      KC_PROXY_HEADERS: "x-forwarded"
+      KC_PROXY_HEADERS: "xforwarded"
       KC_HTTP_ENABLED: "true"
 
     depends_on:
@@ -50,7 +50,7 @@ services:
 
   # 3. Ihr Backend-Service
   backend:
-    image: ${DOCKER_USER}/bot-backend:latest # <-- IHR BACKEND IMAGE
+    image: ${DOCKER_USER}/bot-backend:latest
     container_name: mc-bot-backend
     restart: always
     environment:
@@ -71,7 +71,7 @@ services:
 
   # 4. Ihr Frontend-Service (mit Nginx)
   frontend:
-    image: ${DOCKER_USER}/bot-frontend:latest # <-- IHR FRONTEND IMAGE
+    image: ${DOCKER_USER}/bot-frontend:latest
     container_name: mc-bot-frontend
     restart: always
     depends_on:
