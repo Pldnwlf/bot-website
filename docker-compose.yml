@@ -37,8 +37,8 @@ services:
       KC_DB_PASSWORD: ${DB_PASSWORD}
       KC_DB_SCHEMA: public
 
-      KC_PROXY: "x-forwarded" # Sagt Keycloak, dass es hinter einem Reverse Proxy läuft
-      KC_HTTP_ENABLED: "true" # Erlaubt internen HTTP-Verkehr
+      KC_PROXY: "x-forwarded"
+      KC_HTTP_ENABLED: "true"
 
     depends_on:
       postgres-db:
@@ -57,6 +57,7 @@ services:
       DATABASE_URL: "postgresql://${DB_USER}:${DB_PASSWORD}@postgres-db:5432/${DB_DATABASE}"
       KEYCLOAK_URL: ${BACKEND_KEYCLOAK_URL}
       KEYCLOAK_REALM: ${BACKEND_KEYCLOAK_REALM}
+      BACKEND_KEYCLOAK_CLIENT_ID: ${BACKEND_KEYCLOAK_CLIENT_ID}
     depends_on:
       - keycloak
     networks:
