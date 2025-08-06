@@ -1,0 +1,7 @@
+services:
+  keycloak:
+    # Wir überschreiben nur den Befehl und die Volumes für den Import
+    command: start-dev --import-realm
+    volumes:
+      - ./keycloak-config:/opt/keycloak/data/import
+    # Ports sind hier nicht nötig, da es nur ein temporärer Schritt ist
