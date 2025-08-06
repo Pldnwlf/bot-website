@@ -1,4 +1,4 @@
-import * as winston from 'winston';
+import winston, { format, Logform } from 'winston';
 
 // Definiere die Farben für die verschiedenen Log-Level
 const colors = {
@@ -10,25 +10,39 @@ const colors = {
 };
 
 winston.addColors(colors);
+export interface LogMeta {
+    accountId?: string;
+    accountName?: string;
+    error?: any;
+}
 
-// Erstelle das benutzerdefinierte Format für die Log-Nachrichten
-const logFormat = winston.format.combine(
-    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-    winston.format.colorize({ all: true }),
-    winston.format.printf((info) => {
-        const { accountId, accountName } = info.metadata || {};
+interface CustomLogformInfo extends Logform.TransformableInfo {
+    metadata?: LogMeta;
+}
+
+const logFormat = format.combine(
+    format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+    format.colorize({ all: true }),
+    format.printf((info: CustomLogformInfo) => {
+        const metadata = info.metadata || {};
+        const { accountId, accountName } = metadata;
 
         let identity = '';
         if (accountId) {
-            identity = accountName ? `[${accountName} - ${accountId}]` : `[${info.accountId}]`;
+            identity = accountName ? `[${accountName} - ${accountId}]` : `[${accountId}]`;
         }
 
-        // Gib die formatierte Nachricht zurück
-        return `${info.timestamp} ${info.level} ${identity}: ${info.message}`;
+        let message = `${info.timestamp} ${info.level} ${identity}: ${info.message}`;
+
+        // Bonus: Wenn ein Fehlerobjekt in den Metadaten übergeben wird, logge den Stacktrace.
+        if (metadata.error && metadata.error instanceof Error) {
+            message += `\n${metadata.error.stack}`;
+        }
+
+        return message;
     })
 );
 
-// Erstelle und exportiere die Logger-Instanz
 const logger = winston.createLogger({
     level: 'debug', // Zeige alle Logs ab dem Level 'debug' an
     levels: {
@@ -40,14 +54,11 @@ const logger = winston.createLogger({
     },
     format: logFormat,
     transports: [
-        // Alle Logs sollen in der Konsole ausgegeben werden
         new winston.transports.Console(),
     ],
-    // Wenn ein Fehler nicht abgefangen wird, logge ihn, anstatt den Prozess abstürzen zu lassen
     exceptionHandlers: [
         new winston.transports.Console(),
     ],
-    // Auch bei nicht abgefangenen Promise-Rejections loggen
     rejectionHandlers: [
         new winston.transports.Console(),
     ],
