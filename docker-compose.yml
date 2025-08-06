@@ -37,7 +37,7 @@ services:
       KC_DB_PASSWORD: ${DB_PASSWORD}
       KC_DB_SCHEMA: public
 
-      KC_PROXY: "edge" # Sagt Keycloak, dass es hinter einem Reverse Proxy läuft
+      KC_PROXY: "x-forwarded" # Sagt Keycloak, dass es hinter einem Reverse Proxy läuft
       KC_HTTP_ENABLED: "true" # Erlaubt internen HTTP-Verkehr
 
     depends_on:
