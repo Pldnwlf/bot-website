@@ -1,0 +1,8 @@
+{
+  "realm": "${BACKEND_KEYCLOAK_REALM}",
+  "auth-server-url": "${KEYCLOAK_URL}",
+  "ssl-required": "none",
+  "resource": "${BACKEND_KEYCLOAK_CLIENT_ID}",
+  "public-client": true,
+  "confidential-port": 0
+}
