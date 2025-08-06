@@ -44,6 +44,12 @@ function broadcast(data: any) {
     });
 }
 
+// HEALTH CHECK
+app.get('/healthz', (req, res) => {
+    res.status(200).send('OK');
+});
+
+
 // =========================================================================
 // MIDDLEWARE (unverändert)
 // =========================================================================
@@ -379,6 +385,7 @@ async function main() {
         logger.info(`🚀 Server listening on http://localhost:${PORT}`);
     });
 }
+
 
 main().catch(e => {
     logger.error("Fatal error during startup:", { error: e });

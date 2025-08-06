@@ -63,8 +63,9 @@ services:
     networks:
       - internal-bot-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
-      interval: 15s
+      # Change the URL to the new /healthz endpoint
+      test: ["CMD", "curl", "-f", "http://localhost:3000/healthz"]
+      interval: 10s
       timeout: 10s
       retries: 5
       start_period: 10s
