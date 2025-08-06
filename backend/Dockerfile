@@ -34,7 +34,9 @@ COPY --from=builder /app/dist ./dist
 # Das Prisma-Schema kopieren, damit der Client es zur Laufzeit findet
 COPY prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma/client ./node_modules/.prisma/client
-# Den Port freigeben, auf dem die App läuft (aus Ihrer .env oder Standard 3000)
+
+COPY keycloak.json ./
+
 EXPOSE 3000
 
 CMD [ "node", "dist/index.js" ]
