@@ -1,8 +1,8 @@
-name: Build and Push Docker Images
+name: DEV - Build and Push Docker Images
 
 on:
   push:
-    branches: [ main ]  # Oder Ihr Hauptbranch
+    branches: [ dev ]  # Oder Ihr Hauptbranch
 
 jobs:
   build-and-push:
