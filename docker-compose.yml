@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # 1. Datenbank
   postgres-db:
@@ -52,7 +50,7 @@ services:
 
   # 3. Ihr Backend-Service
   backend:
-    image: ${DOCKER_USER}/backend:latest # <-- IHR BACKEND IMAGE
+    image: ${DOCKER_USER}/bot-backend:latest # <-- IHR BACKEND IMAGE
     container_name: mc-bot-backend
     restart: always
     environment:
