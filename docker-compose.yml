@@ -37,7 +37,7 @@ services:
       KC_DB_PASSWORD: ${DB_PASSWORD}
       KC_DB_SCHEMA: public
 
-      KC_PROXY: "x-forwarded"
+      KC_PROXY_HEADERS: "x-forwarded"
       KC_HTTP_ENABLED: "true"
 
     depends_on:
