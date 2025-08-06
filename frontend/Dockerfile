@@ -1,6 +1,6 @@
 FROM node:20 AS build
 WORKDIR /app
-COPY frontend/ .
+COPY . .
 RUN npm install && npm run build --prod
 
 # Production Stage
