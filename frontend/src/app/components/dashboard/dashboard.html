@@ -13,6 +13,10 @@
           <mat-label>Server Address</mat-label>
           <input matInput placeholder="e.g., mc.hypixel.net" [(ngModel)]="serverAddress">
         </mat-form-field>
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Minecraft Version (optional)</mat-label>
+          <input matInput placeholder="e.g., 1.21.4 (leave blank for auto-detect)" [(ngModel)]="accountVersion">
+        </mat-form-field>
       </mat-card-content>
       <mat-card-actions>
         <button mat-flat-button color="primary" (click)="startSelected()" [disabled]="selection.isEmpty() || !serverAddress">
@@ -43,7 +47,7 @@
       </mat-list-item>
 
       <!-- Liste der einzelnen Accounts -->
-      @for (account of accounts; track account.accountId) {
+      @for (account of activeAccounts; track account.accountId) {
         <!-- Die ganze Zeile ist klickbar, um die Auswahl umzuschalten -->
         <mat-list-item (click)="selection.toggle(account)" [class.selected-item]="selection.isSelected(account)">
           <!-- Die individuelle Checkbox -->
@@ -55,8 +59,17 @@
             [aria-label]="'Select account ' + (account.ingameName || account.loginEmail)">
           </mat-checkbox>
 
-          <div matListItemTitle>{{ account.ingameName || account.loginEmail }}</div>
-          <div matListItemLine>Status: {{ account.session?.status || 'offline' }}</div>
+        <div matListItemTitle>{{ account.ingameName || account.loginEmail }}</div>
+        <div matListItemLine
+               [ngClass]="{
+         'status-connecting': account.session?.status?.includes('Connecting'),
+         'status-waiting': account.session?.status?.includes('Waiting'),
+         'status-online': account.session?.status?.startsWith('online'),
+         'status-offline': !account.session?.status?.startsWith('online') && !account.session?.status?.includes('Connecting'),
+         'status-error': isErrorStatus(account.session?.status)
+       }">
+          Status: {{ account.session?.status || 'offline' }}
+        </div>
 
           <div matListItemMeta>
             <mat-icon [color]="account.session?.status?.startsWith('online') ? 'primary' : 'disabled'">
@@ -65,7 +78,7 @@
           </div>
         </mat-list-item>
       } @empty {
-        <p class="empty-list-message">No accounts found.</p>
+        <p class="empty-list-message">No active accounts found. Please add and verify one in the 'Accounts' section.</p>
       }
     </mat-list>
   </div>

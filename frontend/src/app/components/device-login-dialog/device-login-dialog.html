@@ -1,0 +1,27 @@
+<h1 mat-dialog-title>Device Login Required</h1>
+<div mat-dialog-content>
+  <p>To link your Microsoft account, please follow these steps:</p>
+  <ol>
+    <li>
+      Open the link below in a new browser tab.
+      <a [href]="data.url" target="_blank" class="login-link" mat-button>
+        <mat-icon>open_in_new</mat-icon>
+        Open Microsoft Link
+      </a>
+    </li>
+    <li>
+      When prompted, enter the following one-time code:
+    </li>
+  </ol>
+  <div class="code-container">
+    <span class="code-box">{{ data.code }}</span>
+    <button mat-icon-button (click)="copyCode()" matTooltip="Copy code to clipboard">
+      <mat-icon>content_copy</mat-icon>
+    </button>
+  </div>
+  <mat-progress-bar mode="indeterminate" class="waiting-bar"></mat-progress-bar>
+  <p class="waiting-text">Waiting for you to complete the login... This dialog will close automatically upon success.</p>
+</div>
+<div mat-dialog-actions align="end">
+  <button mat-stroked-button (click)="onClose()">Cancel</button>
+</div>

@@ -1,45 +1,46 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Block 1: Definiert den Prisma Client Generator
 generator client {
   provider = "prisma-client-js"
 }
 
-// Block 2: Definiert die Datenquelle (Dies hat gefehlt!)
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-// Block 3: Deine Datenmodelle
+enum AccountStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+}
+
 model MinecraftAccount {
-  accountId      String  @id @default(uuid())
-  keycloakUserId String?
-
-  // UMGEBENANNT: Das ist die E-Mail für den Microsoft-Login
-  loginEmail String @unique
-
-  ingameName String?
-
-  encryptedPassword Bytes
-  iv                Bytes
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  accountId             String        @id @default(uuid())
+  keycloakUserId        String
+  loginEmail            String
+  ingameName            String?
+  status                AccountStatus @default(PENDING_VERIFICATION)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
 
   session BotSession?
-}
+
+  @@unique([loginEmail, keycloakUserId])
+  @@index([keycloakUserId])
+  }
 
 model BotSession {
   sessionId              String   @id @default(uuid())
   lastKnownServerAddress String?
   lastKnownServerPort    Int?
+  lastKnownVersion       String?
   isActive               Boolean  @default(false)
-  status                 String   @default("offline") // z.B. 'offline', 'connecting', 'online', 'error'
-  lastKickReason         String? // Hier speichern wir die Kick-Nachricht
+  status                 String   @default("offline")
+  lastKickReason         String?
   lastSeenAt             DateTime @default(now())
 
-  // Relation: Jede Session gehört zu genau einem MinecraftAccount
-  account   MinecraftAccount @relation(fields: [accountId], references: [accountId])
-  accountId String           @unique // Stellt eine 1-zu-1-Beziehung sicher
+  account   MinecraftAccount @relation(fields: [accountId], references: [accountId], onDelete: Cascade)
+  accountId String           @unique
 }

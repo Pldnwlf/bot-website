@@ -2,49 +2,48 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
-// Wir definieren ein Interface für unsere Account-Daten für Typsicherheit
 export interface MinecraftAccount {
   accountId: string;
   loginEmail: string;
-  ingameName?: string;
+  ingameName: string | null;
+  status: 'PENDING_VERIFICATION' | 'ACTIVE' | 'SUSPENDED';
   session?: {
     status: string;
-    lastKnownServerAddress?: string;
+    lastKnownServerAddress: string | null;
   };
 }
 
-@Injectable({
-  providedIn: 'root'
-})
+export interface InitiateAddResponse {
+  accountId: string;
+  auth: {
+    code: string;
+    url: string;
+  };
+}
+
+@Injectable({ providedIn: 'root' })
 export class MinecraftAccountService {
-  private readonly apiUrl = 'http://localhost:3000/api'; // Basis-URL unserer API
+  private readonly apiUrl = 'http://localhost:3000/api';
 
-  constructor(private http: HttpClient) { }
+  constructor(private http: HttpClient) {}
 
-  // Ruft alle Accounts für den eingeloggten Benutzer ab
   getAccounts(): Observable<MinecraftAccount[]> {
-    return this.http.get<MinecraftAccount[]>(`${this.apiUrl}/minecraft-accounts`);
+    return this.http.get<MinecraftAccount[]>(`${this.apiUrl}/accounts`);
   }
 
-  // Fügt einen neuen Account hinzu
-  addAccount(data: { loginEmail: string, password: string }): Observable<MinecraftAccount> {
-    return this.http.post<MinecraftAccount>(`${this.apiUrl}/minecraft-accounts`, data);
+  initiateAddAccount(loginEmail: string): Observable<InitiateAddResponse> {
+    return this.http.post<InitiateAddResponse>(`${this.apiUrl}/accounts/initiate-add`, { loginEmail });
   }
 
-  removeAccount(id: string): Observable<any> {
-    return this.http.delete(`${this.apiUrl}/minecraft-accounts/${id}`);
+  startBots(accountIds: string[], serverAddress: string, accountVersion: string): Observable<any> {
+    return this.http.post(`${this.apiUrl}/bots/start`, { accountIds, serverAddress, accountVersion });
   }
 
-  startMultipleBots(accountIds: string[], serverAddress: string, serverPort?: number): Observable<any> {
-    const body = { accountIds, serverAddress, serverPort };
-    return this.http.post(`${this.apiUrl}/bots/startmultiple`, body);
+  stopBots(accountIds: string[]): Observable<any> {
+    return this.http.post(`${this.apiUrl}/bots/stop`, { accountIds });
   }
 
-  stopMultipleBots(accountIds: string[]): Observable<any> {
-    const body = {accountIds};
-    return this.http.post(`${this.apiUrl}/bots/stopmultiple`, body);
+  removeAccount(accountId: string): Observable<void> {
+    return this.http.delete<void>(`${this.apiUrl}/accounts/${accountId}`);
   }
-
-
-
 }
