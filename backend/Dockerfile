@@ -1,9 +1,4 @@
-FROM node:20
-WORKDIR /app
-COPY . .
-RUN npm install --production
-CMD ["node", "server.js"]
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 # Arbeitsverzeichnis im Container
 WORKDIR /app
@@ -23,7 +18,7 @@ RUN npm run build
 # =========================================================================
 # STAGE 2: Production - Erstellt das finale, schlanke Image
 # =========================================================================
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
