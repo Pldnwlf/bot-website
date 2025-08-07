@@ -26,13 +26,14 @@ WORKDIR /app
 COPY package*.json ./
 
 # NUR Produktions-Abhängigkeiten installieren (kleineres Image)
-RUN npm install --omit=dev
 
+COPY --from=builder /app/node_modules ./node_modules
 # Die kompilierten JavaScript-Dateien aus dem "builder"-Stage kopieren
 COPY --from=builder /app/dist ./dist
 
 # Das Prisma-Schema kopieren, damit der Client es zur Laufzeit findet
 COPY prisma ./prisma
+
 COPY --from=builder /app/node_modules/.prisma/client ./node_modules/.prisma/client
 
 COPY keycloak.json ./

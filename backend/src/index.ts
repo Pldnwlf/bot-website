@@ -44,7 +44,7 @@ function broadcast(data: any) {
     });
 }
 
-// HEALTH CHECK
+// Healh Check endpoint
 app.get('/healthz', (req, res) => {
     res.status(200).send('OK');
 });
