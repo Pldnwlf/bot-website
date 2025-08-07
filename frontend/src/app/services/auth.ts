@@ -5,16 +5,14 @@ import { KeycloakService } from 'keycloak-angular';
   providedIn: 'root'
 })
 export class AuthService {
-  // Hier ist es OK, den Service zu injecten, da dies ein 'root'-Service ist
-  // und Zugriff auf die globale Konfiguration hat.
   constructor(private readonly keycloakService: KeycloakService) {}
 
   async init(): Promise<boolean> {
     return this.keycloakService.init({
       config: {
-        url: 'http://localhost:8080', // Deine Keycloak-URL
-        realm: 'minecraft-dashboard',          // Dein Realm
-        clientId: 'angular-frontend'    // Deine Client-ID
+        url: 'https://keycloak.paladinwolfi.ch',
+        realm: 'minecraft-dashboard',
+        clientId: 'angular-frontend'
       },
       initOptions: {
         onLoad: 'check-sso',
