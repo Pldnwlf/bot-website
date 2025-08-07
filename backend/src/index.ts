@@ -18,6 +18,12 @@ import * as path from 'path';
 import { readdir, mkdir, rename, readFile } from "node:fs/promises";
 
 const app = express();
+
+// Healh Check endpoint
+app.get('/healthz', (req, res) => {
+    res.status(200).send('OK');
+});
+
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3000;
 const logindelay = parseInt(process.env.LOGINDELAY || "2000");
@@ -44,10 +50,6 @@ function broadcast(data: any) {
     });
 }
 
-// Healh Check endpoint
-app.get('/healthz', (req, res) => {
-    res.status(200).send('OK');
-});
 
 
 // =========================================================================
