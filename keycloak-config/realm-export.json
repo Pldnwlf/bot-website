@@ -476,6 +476,20 @@
   },
   "clients": [
     {
+      "id": "f6771e21-2a66-4b71-b9c6-f1783b5e80b2",
+      "clientId": "minecraft-dashboard",
+      "name": "Minecraft Dashboard Backend",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "1234",
+      "bearerOnly": false,
+      "publicClient": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "fullScopeAllowed": false
+    },
+    {
       "id": "f6771e21-2a66-4b71-a4cd-b77f85dc702d",
       "clientId": "account",
       "name": "${client_account}",
@@ -620,15 +634,17 @@
       "rootUrl": "",
       "adminUrl": "",
       "baseUrl": "",
+      "clientAuthenticatorType": "client-secret",
       "surrogateAuthRequired": false,
       "enabled": true,
       "alwaysDisplayInConsole": false,
-      "clientAuthenticatorType": "client-secret",
       "redirectUris": [
-        "http://localhost:4200/*"
+        "http://localhost:4200/*",
+        "https://bot.paladinwolfi.ch/*"
       ],
       "webOrigins": [
-        "http://localhost:4200"
+        "http://localhost:4200",
+        "bot.paladinwolfi.ch"
       ],
       "notBefore": 0,
       "bearerOnly": false,

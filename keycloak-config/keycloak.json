@@ -1,0 +1,10 @@
+{
+  "realm": "minecraft-dashboard",
+  "auth-server-url": "https://keycloak.paladinwolfi.ch/",
+  "ssl-required": "external",
+  "resource": "angular-frontend",
+  "credentials": {
+    "secret": "1234"
+  },
+  "confidential-port": 0
+}
