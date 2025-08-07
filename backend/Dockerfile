@@ -22,6 +22,8 @@ FROM node:22-alpine
 
 WORKDIR /app
 
+RUN apk add --no-cache curl
+
 # Nur die package.json und package-lock.json kopieren
 COPY package*.json ./
 
