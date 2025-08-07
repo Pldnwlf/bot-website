@@ -4,13 +4,18 @@ FLAG_FILE=".realm_imported"
 
 if [ -f "$FLAG_FILE" ]; then
     echo "✅ Realm wurde bereits importiert. Starte alle Dienste im Produktionsmodus..."
-    # Wenn ja, starte einfach die normale Produktionsumgebung.
+
+    echo "   -> Pulling latest images from the registry..."
+    docker compose pull
+
+    echo "   -> Starting all services..."
     docker compose up -d
 else
     # Wenn nein, führe den einmaligen Import-Prozess durch.
     echo "🚀 Realm wurde noch nicht importiert. Starte den einmaligen Import-Vorgang..."
 
-    # Schritt 1: Starte Keycloak im Dev-Modus, um den Import auszuführen.
+    docker compose pull
+
     echo "   -> Starte Keycloak im Import-Modus..."
     docker compose -f docker-compose.yml -f docker-compose.import.yml up -d keycloak
 
