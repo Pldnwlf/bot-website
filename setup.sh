@@ -9,7 +9,7 @@ if [ -f "$FLAG_FILE" ]; then
     docker compose pull
 
     echo "   -> Starting all services..."
-    docker compose up -d
+    docker compose up
 else
     # Wenn nein, führe den einmaligen Import-Prozess durch.
     echo "🚀 Realm wurde noch nicht importiert. Starte den einmaligen Import-Vorgang..."
