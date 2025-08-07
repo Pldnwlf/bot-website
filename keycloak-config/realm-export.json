@@ -644,7 +644,7 @@
       ],
       "webOrigins": [
         "http://localhost:4200",
-        "bot.paladinwolfi.ch"
+        "https://bot.paladinwolfi.ch"
       ],
       "notBefore": 0,
       "bearerOnly": false,

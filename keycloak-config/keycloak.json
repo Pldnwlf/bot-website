@@ -1,8 +1,8 @@
 {
   "realm": "minecraft-dashboard",
-  "auth-server-url": "https://keycloak.paladinwolfi.ch/",
+  "auth-server-url": "http://mc-bot-keycloak:8080/",
   "ssl-required": "external",
-  "resource": "angular-frontend",
+  "resource": "minecraft-dashboard",
   "credentials": {
     "secret": "1234"
   },

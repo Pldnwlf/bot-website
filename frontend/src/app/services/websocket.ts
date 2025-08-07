@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Subject, Observable } from 'rxjs';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
+import { environment } from '../../environments/environment';
 
 export interface WebSocketMessage {
   type: string;
@@ -16,7 +17,7 @@ export class WebsocketService {
 
   public connect(): void {
     if (!this.socket$ || this.socket$.closed) {
-      this.socket$ = webSocket('ws://localhost:3000'); // Deine WebSocket-URL
+      this.socket$ = webSocket(environment.wsUrl); // Deine WebSocket-URL
 
       this.socket$.subscribe({
         next: (msg) => {
