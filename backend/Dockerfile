@@ -9,7 +9,6 @@ RUN npm install
 
 COPY . .
 
-# Prisma Client generieren (wichtig für die Typensicherheit)
 RUN npx prisma generate
 
 RUN npm run build
@@ -27,9 +26,7 @@ RUN apk add --no-cache curl
 # Nur die package.json und package-lock.json kopieren
 COPY package*.json ./
 
-# NUR Produktions-Abhängigkeiten installieren (kleineres Image)
-
-RUN npm install --omit=dev --ignore-scripts
+COPY --from=builder /app/node_modules ./node_modules
 
 # Die kompilierten JavaScript-Dateien aus dem "builder"-Stage kopieren
 COPY --from=builder /app/dist ./dist
