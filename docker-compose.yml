@@ -62,6 +62,7 @@ services:
       - keycloak
     networks:
       - internal-bot-network
+      - proxy-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/healthz"]
       interval: 10s
