@@ -25,7 +25,8 @@ app.get('/healthz', (req, res) => {
 });
 
 const prisma = new PrismaClient();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || "3000", 10);
+const HOST = process.env.HOST || '0.0.0.0';
 const logindelay = parseInt(process.env.LOGINDELAY || "2000");
 
 const msaCachePath = path.join(process.cwd(), 'msa');
@@ -383,8 +384,8 @@ async function main() {
         });
     });
 
-    server.listen(PORT, () => {
-        logger.info(`🚀 Server listening on http://localhost:${PORT}`);
+    server.listen(PORT, HOST, () => {
+        logger.info(`🚀 Server listening on http://${HOST}:${PORT}`);
     });
 }
 
