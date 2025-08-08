@@ -1,5 +1,12 @@
 #!/bin/bash
 set -e
+
+echo "➡️ Lade Umgebungsvariablen aus der .env-Datei..."
+if [ -f .env ]; then
+  # exportiert die Variablen, ignoriert Kommentare und leere Zeilen
+  export $(cat .env | sed 's/#.*//g' | xargs)
+fi
+
 FLAG_FILE=".realm_imported"
 
 if [ -f "$FLAG_FILE" ]; then
@@ -10,10 +17,32 @@ if [ -f "$FLAG_FILE" ]; then
 
     echo "   -> Starting all services..."
     docker compose up -d
-else
-    # Wenn nein, führe den einmaligen Import-Prozess durch.
-    echo "🚀 Realm wurde noch nicht importiert. Starte den einmaligen Import-Vorgang..."
 
+else
+    echo "🚀 Erstmaliger Start. Führe den Realm-Import-Prozess durch..."
+
+    #Prüfen, ob jq installiert ist
+    if ! command -v jq &> /dev/null
+    then
+        echo "❌ Fehler: 'jq' ist nicht installiert. Bitte installieren Sie es mit 'sudo apt-get update && sudo apt-get install -y jq' und versuchen Sie es erneut."
+        exit 1
+    fi
+
+    echo "   -> Patche die Realm-Datei mit dem Secret aus der .env-Datei..."
+    REALM_FILE="./keycloak-config/realm-export.json"
+    TEMP_FILE="./keycloak-config/realm-export.tmp.json"
+
+    # Überprüfen, ob das Secret in der .env-Datei auch wirklich gesetzt ist
+    if [ -z "$KEYCLOAK_CLIENT_SECRET" ]; then
+        echo "❌ Fehler: KEYCLOAK_CLIENT_SECRET ist in der .env-Datei nicht gesetzt."
+        exit 1
+    fi
+
+    jq --arg secret "$KEYCLOAK_CLIENT_SECRET" '(.clients[] | select(.clientId=="minecraft-dashboard").secret) |= $secret' "$REALM_FILE" > "$TEMP_FILE" && mv "$TEMP_FILE" "$REALM_FILE"
+
+   echo "   -> Realm-Datei erfolgreich gepatcht."
+
+    echo "   -> Ziehe die benötigten Images..."
     docker compose pull
 
     echo "   -> Starte Keycloak im Import-Modus..."
