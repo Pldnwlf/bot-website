@@ -481,7 +481,7 @@
       "name": "Minecraft Dashboard Backend",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
-      "secret": "1234",
+      "secret": "CHANGE_ME_IN_PRODUCTION",
       "bearerOnly": false,
       "publicClient": false,
       "directAccessGrantsEnabled": false,

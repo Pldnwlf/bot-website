@@ -55,6 +55,8 @@ services:
     restart: always
     environment:
       DATABASE_URL: "postgresql://${DB_USER}:${DB_PASSWORD}@postgres-db:5432/${DB_DATABASE}"
+      KEYCLOAK_AUTH_SERVER_URL: https://keycloak.paladinwolfi.ch
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
       KEYCLOAK_URL: ${BACKEND_KEYCLOAK_URL}
       KEYCLOAK_REALM: ${BACKEND_KEYCLOAK_REALM}
       BACKEND_KEYCLOAK_CLIENT_ID: ${BACKEND_KEYCLOAK_CLIENT_ID}

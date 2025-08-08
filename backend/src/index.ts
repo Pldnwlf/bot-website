@@ -3,7 +3,7 @@
 // =========================================================================
 import dotenv from 'dotenv';
 dotenv.config();
-import Keycloak from 'keycloak-connect';
+import Keycloak, { KeycloakConfig } from 'keycloak-connect';
 import cors from 'cors';
 import session from 'express-session';
 import express from 'express';
@@ -57,7 +57,20 @@ function broadcast(data: any) {
 // MIDDLEWARE (unverändert)
 // =========================================================================
 const memoryStore = new session.MemoryStore();
-const keycloak = new Keycloak({ store: memoryStore });
+
+const keycloakConfig = {
+    realm: process.env.KEYCLOAK_REALM || "WRONG REALM",
+    'auth-server-url': process.env.KEYCLOAK_AUTH_SERVER_URL || "localhost",
+    'ssl-required': 'external',
+    resource: process.env.KEYCLOAK_CLIENT_ID || "WRONG CLIENT",
+
+    'confidential-port': 0,
+    credentials: {
+        secret: process.env.KEYCLOAK_CLIENT_SECRET || "WRONG SECRET"
+    }
+};
+
+const keycloak = new Keycloak({ store: memoryStore }, keycloakConfig);
 app.use(express.json());
 app.use(cors({ origin: 'http://localhost:4200' }));
 app.use(session({
