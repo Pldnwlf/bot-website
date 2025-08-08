@@ -29,17 +29,22 @@ COPY package*.json ./
 
 # NUR Produktions-Abhängigkeiten installieren (kleineres Image)
 
-COPY --from=builder /app/node_modules ./node_modules
+RUN npm install --omit=dev --ignore-scripts
+
 # Die kompilierten JavaScript-Dateien aus dem "builder"-Stage kopieren
 COPY --from=builder /app/dist ./dist
 
 # Das Prisma-Schema kopieren, damit der Client es zur Laufzeit findet
 COPY prisma ./prisma
 
-COPY --from=builder /app/node_modules/.prisma/client ./node_modules/.prisma/client
-
-COPY keycloak.json ./
+# COPY --from=builder /app/node_modules/.prisma/client ./node_modules/.prisma/client
 
 EXPOSE 3000
+
+COPY ./docker-entrypoint.sh /app/docker-entrypoint.sh
+
+RUN chmod +x /app/docker-entrypoint.sh
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
 CMD [ "node", "dist/index.js" ]
